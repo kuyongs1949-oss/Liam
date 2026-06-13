@@ -85,6 +85,7 @@ export default function SiteAnalysisPage() {
   const [buildings, setBuildings]         = useState(null);
   const [results, setResults]             = useState([]);
   const [expandedId, setExpandedId]       = useState(null);
+  const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [loading, setLoading]             = useState(false);
   const [error, setError]                 = useState('');
   const [panelOpen, setPanelOpen]         = useState(true);  // 사이드 패널 토글
@@ -112,7 +113,7 @@ export default function SiteAnalysisPage() {
   const handleSourceSet = useCallback(({ lng, lat }) => {
     if (drawModeRef.current === 'barrier') return;
     setSourceLocation({ lng, lat, radius });
-    setResults([]); setBuildings(null); setError('');
+    setResults([]); setBuildings(null); setError(''); setSelectedBuilding(null);
   }, [radius]);
 
   const handleBarrierComplete = useCallback((coords) => {
@@ -187,12 +188,17 @@ export default function SiteAnalysisPage() {
         <MapLibre3D
           sourceLocation={sourceLocation} barrierCoords={barrierSegments}
           buildingGeoJSON={buildings} drawMode={drawMode} barrierHeight={barrierHeight}
-          flyToLocation={flyToLocation} onSourceSet={handleSourceSet}
+          flyToLocation={flyToLocation} selectedBuilding={selectedBuilding}
+          onSourceSet={handleSourceSet}
           onBarrierComplete={handleBarrierComplete}
           onBuildingSelect={(props) => {
             if (!props) return;
             const r = results.find((r) => r.id === props.id);
-            if (r) setExpandedId((p) => p === r.id ? null : r.id);
+            if (r) {
+              const isSame = expandedId === r.id;
+              setExpandedId(isSame ? null : r.id);
+              setSelectedBuilding(isSame ? null : r);
+            }
           }}
         />
       </Box>
@@ -520,10 +526,15 @@ export default function SiteAnalysisPage() {
                 const isE = expandedId === r.id;
                 return (
                   <Box key={r.id}>
-                    <Box onClick={() => setExpandedId(isE ? null : r.id)} sx={{
+                    <Box onClick={() => {
+                      const next = isE ? null : r.id;
+                      setExpandedId(next);
+                      setSelectedBuilding(next ? r : null);
+                    }} sx={{
                       display: 'flex', alignItems: 'center', gap: 1.5,
                       px: 2, py: 1.2, cursor: 'pointer',
-                      borderBottom: '1px solid #F1F3F4',
+                      borderBottom: isE ? 'none' : '1px solid #F1F3F4',
+                      borderLeft: isE ? `3px solid ${lv.color}` : '3px solid transparent',
                       background: isE ? lv.bg : '#fff',
                       '&:hover': { background: isE ? lv.bg : '#F8F9FA' },
                     }}>

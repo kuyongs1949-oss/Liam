@@ -169,6 +169,7 @@ export default function MapLibre3D({
   drawMode,
   barrierHeight = 3,
   flyToLocation,
+  selectedBuilding,
   onSourceSet,
   onBarrierComplete,
   onBuildingSelect,
@@ -280,6 +281,20 @@ export default function MapLibre3D({
         paint: { 'fill-color': '#FA5B0F', 'fill-opacity': 0.04 } });
       map.addLayer({ id: 'radius-line', type: 'line', source: 'radius-ring',
         paint: { 'line-color': '#FA5B0F', 'line-width': 1.5, 'line-dasharray': [4, 3], 'line-opacity': 0.5 } });
+
+      /* 선택된 건물 하이라이트 */
+      map.addSource('selected-building', { type: 'geojson', data: EMPTY });
+      map.addLayer({ id: 'selected-building-fill', type: 'fill-extrusion', source: 'selected-building',
+        paint: {
+          'fill-extrusion-color': '#FBBC04',
+          'fill-extrusion-height': ['get', 'height'],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.95,
+        },
+      });
+      map.addLayer({ id: 'selected-building-outline', type: 'line', source: 'selected-building',
+        paint: { 'line-color': '#FA5B0F', 'line-width': 3 },
+      });
 
       /* 클릭 이벤트 */
       map.on('click', 'noise-buildings-3d', (e) => {
@@ -547,6 +562,31 @@ export default function MapLibre3D({
   useEffect(() => {
     setSource('noise-buildings', buildingGeoJSON || EMPTY);
   }, [buildingGeoJSON, setSource]);
+
+  /* ── 선택된 건물 하이라이트 + 카메라 이동 ── */
+  useEffect(() => {
+    if (!selectedBuilding || !buildingGeoJSON) {
+      setSource('selected-building', EMPTY);
+      return;
+    }
+    const feature = buildingGeoJSON.features.find(
+      (f) => f.properties.id === selectedBuilding.id
+    );
+    if (!feature) { setSource('selected-building', EMPTY); return; }
+
+    setSource('selected-building', { type: 'FeatureCollection', features: [feature] });
+
+    // 건물 centroid로 카메라 이동
+    const { centroid_lng, centroid_lat } = selectedBuilding;
+    if (centroid_lng && centroid_lat && mapRef.current) {
+      mapRef.current.flyTo({
+        center: [centroid_lng, centroid_lat],
+        zoom: Math.max(mapRef.current.getZoom(), 17),
+        pitch: 60,
+        duration: 600,
+      });
+    }
+  }, [selectedBuilding, buildingGeoJSON, setSource]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
