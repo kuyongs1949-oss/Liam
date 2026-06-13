@@ -109,11 +109,15 @@ export default function SiteAnalysisPage() {
     setAddrQuery(item.display_name.split(',')[0]);
   }, []);
 
+  // drawMode ref — MapLibre3D의 map.on('click') 핸들러에서 최신 drawMode를 참조
+  const drawModeRef = useRef(drawMode);
+  useEffect(() => { drawModeRef.current = drawMode; }, [drawMode]);
+
   const handleSourceSet = useCallback(({ lng, lat }) => {
-    if (drawMode === 'barrier') return;
+    if (drawModeRef.current === 'barrier') return;
     setSourceLocation({ lng, lat, radius });
     setResults([]); setBuildings(null); setError('');
-  }, [drawMode, radius]);
+  }, [radius]);
 
   const handleBarrierComplete = useCallback((coords) => {
     setBarrierSegments((prev) => [...prev, coords]);
