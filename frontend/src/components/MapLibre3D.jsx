@@ -52,9 +52,17 @@ export default function MapLibre3D({
         source: 'noise-buildings',
         paint: {
           'fill-extrusion-color': ['coalesce', ['get', 'color'], '#90A4AE'],
-          'fill-extrusion-height': ['coalesce', ['get', 'height'], 9],
+          // 소음도에 따라 건물 높이 시각적 과장 (소음 클수록 더 높이 표시)
+          'fill-extrusion-height': [
+            '+',
+            ['coalesce', ['get', 'height'], 9],
+            ['*',
+              ['max', ['-', ['coalesce', ['get', 'max_noise_db'], 0], 60], 0],
+              1.5,
+            ],
+          ],
           'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.88,
+          'fill-extrusion-opacity': 0.85,
         },
       });
 
@@ -64,21 +72,22 @@ export default function MapLibre3D({
         type: 'symbol',
         source: 'noise-buildings',
         layout: {
-          'text-field': ['case',
-            ['!=', ['get', 'max_noise_db'], null],
-            ['concat', ['to-string', ['get', 'max_noise_db']], 'dB'],
+          'text-field': [
+            'case',
+            ['>', ['coalesce', ['get', 'max_noise_db'], 0], 0],
+            ['concat', ['to-string', ['round', ['get', 'max_noise_db']]], 'dB'],
             '',
           ],
-          'text-size': 11,
+          'text-size': 12,
           'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
           'text-anchor': 'center',
-          'text-offset': [0, 0],
           'text-allow-overlap': false,
+          'text-ignore-placement': false,
         },
         paint: {
           'text-color': ['coalesce', ['get', 'color'], '#37474F'],
-          'text-halo-color': 'rgba(255,255,255,0.9)',
-          'text-halo-width': 1.5,
+          'text-halo-color': 'rgba(255,255,255,0.95)',
+          'text-halo-width': 2,
         },
       });
 

@@ -123,12 +123,27 @@ export default function SiteAnalysisPage() {
           sufferingMonths,
         })
       );
+      // MapLibre GeoJSON 속성에는 배열/중첩객체 금지 → 렌더링에 필요한 평면 값만 전달
       setBuildings({
         ...geoJSON,
-        features: geoJSON.features.map((f, i) => ({
-          ...f,
-          properties: { ...f.properties, ...calcResults[i] },
-        })),
+        features: geoJSON.features.map((f, i) => {
+          const r = calcResults[i];
+          return {
+            ...f,
+            properties: {
+              id: r.id,
+              name: r.name || '건물',
+              floors: r.floors,
+              height: r.height || (r.floors * 3),
+              color: r.color,
+              max_noise_db: r.max_noise_db,
+              noise_level: r.noise_level || 'safe',
+              exceeds_65db: r.exceeds_65db ? 1 : 0,
+              exceeding_floors: r.exceeding_floors,
+              distance: r.distance,
+            },
+          };
+        }),
       });
       setResults(calcResults.sort((a, b) => b.max_noise_db - a.max_noise_db));
     } catch (e) {
