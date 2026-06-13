@@ -182,8 +182,9 @@ export default function MapLibre3D({
   const animRef       = useRef(null);
 
   // 항상 최신값 참조용 refs
-  const barrierCoordsRef = useRef(barrierCoords || []);
-  const previewRef       = useRef(null);    // 드래그 중 미리보기 상태
+  const barrierCoordsRef   = useRef(barrierCoords || []);
+  const previewRef         = useRef(null);    // 드래그 중 미리보기 상태
+  const sourceMarkerRef    = useRef(null);    // HTML 소음원 마커
   const onBarrierCompleteRef = useRef(onBarrierComplete);
   const onSourceSetRef       = useRef(onSourceSet);
   const onBuildingSelectRef  = useRef(onBuildingSelect);
@@ -398,17 +399,93 @@ export default function MapLibre3D({
     redrawCanvas();
   }, [barrierCoords, barrierHeight, redrawCanvas]);
 
-  /* ── 소음원 위치 ── */
+  /* ── 소음원 위치 (HTML 마커 — 항상 최상단) ── */
   useEffect(() => {
+    // 이전 마커 제거
+    sourceMarkerRef.current?.remove();
+    sourceMarkerRef.current = null;
+
     if (!sourceLocation) {
       setSource('source-loc', EMPTY);
       setSource('radius-ring', EMPTY);
       return;
     }
+
     const { lng, lat, radius = 300 } = sourceLocation;
-    setSource('source-loc', { type: 'FeatureCollection',
-      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }] });
+
+    // GeoJSON 레이어도 유지 (반경 링 등)
+    setSource('source-loc', EMPTY); // 기존 circle 레이어는 비움 (HTML 마커로 대체)
     setSource('radius-ring', makeCircle(lng, lat, radius));
+
+    // HTML 마커 생성
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position: relative;
+      width: 48px; height: 48px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: default;
+    `;
+
+    // 펄스 링
+    const pulse = document.createElement('div');
+    pulse.style.cssText = `
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      background: rgba(250,91,15,0.15);
+      border: 2.5px solid rgba(250,91,15,0.5);
+      animation: sourceMarkerPulse 1.8s ease-out infinite;
+    `;
+
+    // 중심 원
+    const dot = document.createElement('div');
+    dot.style.cssText = `
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #FA5B0F;
+      border: 3px solid white;
+      box-shadow: 0 2px 8px rgba(250,91,15,0.6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; line-height: 1;
+      z-index: 1; position: relative;
+    `;
+    dot.textContent = '🔊';
+
+    // 라벨
+    const label = document.createElement('div');
+    label.style.cssText = `
+      position: absolute; bottom: -22px; left: 50%;
+      transform: translateX(-50%);
+      background: #FA5B0F; color: white;
+      font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 10px;
+      white-space: nowrap;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      font-family: 'Noto Sans KR', sans-serif;
+    `;
+    label.textContent = '소음원';
+
+    // 애니메이션 keyframes (한 번만 주입)
+    if (!document.getElementById('source-marker-style')) {
+      const style = document.createElement('style');
+      style.id = 'source-marker-style';
+      style.textContent = `
+        @keyframes sourceMarkerPulse {
+          0%   { transform: scale(1);   opacity: 0.8; }
+          70%  { transform: scale(1.7); opacity: 0; }
+          100% { transform: scale(1.7); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    el.appendChild(pulse);
+    el.appendChild(dot);
+    el.appendChild(label);
+
+    const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat([lng, lat])
+      .addTo(mapRef.current);
+    sourceMarkerRef.current = marker;
+
     mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, pitch: 50, duration: 600 });
   }, [sourceLocation, setSource]);
 
