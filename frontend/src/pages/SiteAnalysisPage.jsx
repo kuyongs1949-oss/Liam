@@ -265,52 +265,6 @@ export default function SiteAnalysisPage() {
 
         {/* ── STEP 2: 소음원 위치 ── */}
         <SectionCard step={2} title="소음 발생 위치" active={true}>
-          {/* 주소 검색 */}
-          <Box sx={{ position: 'relative', mb: 1.2 }}>
-            <Box sx={{ display: 'flex', gap: 0.8 }}>
-              <TextField
-                size="small" fullWidth
-                placeholder="주소 또는 건물명 검색 (예: 강남구 역삼동)"
-                value={addrQuery}
-                onChange={(e) => setAddrQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddrSearch(); }}
-                InputProps={{
-                  startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment>,
-                }}
-              />
-              <Button
-                variant="contained" size="small" sx={{ px: 1.5, flexShrink: 0, minWidth: 60 }}
-                onClick={handleAddrSearch}
-                disabled={addrLoading || !addrQuery.trim()}
-              >
-                {addrLoading ? <CircularProgress size={16} color="inherit" /> : '검색'}
-              </Button>
-            </Box>
-            {/* 검색 결과 드롭다운 */}
-            {addrResults.length > 0 && (
-              <Paper elevation={4} sx={{
-                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
-                maxHeight: 200, overflowY: 'auto', mt: 0.5, borderRadius: 1.5,
-              }}>
-                <List dense disablePadding>
-                  {addrResults.map((item) => (
-                    <ListItem key={item.place_id} disablePadding divider>
-                      <ListItemButton onClick={() => handleAddrSelect(item)} sx={{ py: 0.8 }}>
-                        <LocationOnIcon sx={{ fontSize: 16, color: '#1565C0', mr: 0.8, flexShrink: 0 }} />
-                        <ListItemText
-                          primary={item.display_name.split(',').slice(0, 2).join(', ')}
-                          secondary={item.display_name.split(',').slice(2, 4).join(', ')}
-                          primaryTypographyProps={{ variant: 'caption', fontWeight: 700, noWrap: true }}
-                          secondaryTypographyProps={{ variant: 'caption', noWrap: true }}
-                        />
-                      </ListItemButton>
-                    </ListItem>
-                  ))}
-                </List>
-              </Paper>
-            )}
-          </Box>
-
           {sourceLocation ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, borderRadius: 1,
               background: '#E8F5E9', border: '1px solid #A5D6A7' }}>
@@ -329,11 +283,11 @@ export default function SiteAnalysisPage() {
               </IconButton>
             </Box>
           ) : (
-            <Box sx={{ p: 1.5, borderRadius: 1, border: '2px dashed #90CAF9',
+            <Box sx={{ p: 1.2, borderRadius: 1, border: '2px dashed #90CAF9',
               textAlign: 'center', background: '#E3F2FD' }}>
-              <LocationOnIcon sx={{ color: '#1565C0', fontSize: 28 }} />
-              <Typography variant="body2" color="primary" fontWeight={600}>주소 검색 후 지도를 클릭하세요</Typography>
-              <Typography variant="caption" color="text.secondary">검색으로 위치 이동 → 클릭으로 정확한 현장 지정</Typography>
+              <LocationOnIcon sx={{ color: '#1565C0', fontSize: 24, mb: 0.3 }} />
+              <Typography variant="body2" color="primary" fontWeight={600}>지도 위 검색창에서 주소 검색</Typography>
+              <Typography variant="caption" color="text.secondary">주소 선택 → 지도 이동 → 클릭으로 현장 확정</Typography>
             </Box>
           )}
           <Box mt={1.2}>
@@ -511,6 +465,98 @@ export default function SiteAnalysisPage() {
 
       {/* ════════ 오른쪽 지도 ════════ */}
       <Box sx={{ flex: 1, position: 'relative' }}>
+
+        {/* ── 지도 위 주소 검색창 오버레이 ── */}
+        <Box sx={{
+          position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 10, width: '90%', maxWidth: 480,
+        }}>
+          <Box sx={{ display: 'flex', gap: 0.8, boxShadow: 4, borderRadius: 2, overflow: 'visible' }}>
+            <TextField
+              size="small" fullWidth
+              placeholder="공사현장 주소 검색 (예: 강남구 역삼동 123)"
+              value={addrQuery}
+              onChange={(e) => { setAddrQuery(e.target.value); if (!e.target.value.trim()) setAddrResults([]); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddrSearch(); if (e.key === 'Escape') setAddrResults([]); }}
+              sx={{
+                background: 'white',
+                borderRadius: '8px 0 0 8px',
+                '& .MuiOutlinedInput-root': { borderRadius: '8px 0 0 8px', background: 'white' },
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ fontSize: 20, color: '#1565C0' }} />
+                  </InputAdornment>
+                ),
+                endAdornment: addrQuery ? (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => { setAddrQuery(''); setAddrResults([]); }}>
+                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+              }}
+            />
+            <Button
+              variant="contained" size="small"
+              sx={{ px: 2, borderRadius: '0 8px 8px 0', minWidth: 64, flexShrink: 0, fontSize: 13, fontWeight: 700 }}
+              onClick={handleAddrSearch}
+              disabled={addrLoading || !addrQuery.trim()}
+            >
+              {addrLoading ? <CircularProgress size={16} color="inherit" /> : '검색'}
+            </Button>
+          </Box>
+
+          {/* 검색 결과 드롭다운 */}
+          {addrResults.length > 0 && (
+            <Paper elevation={6} sx={{
+              mt: 0.5, borderRadius: 1.5, overflow: 'hidden',
+              maxHeight: 260, overflowY: 'auto',
+              border: '1px solid #E0E0E0',
+            }}>
+              <List dense disablePadding>
+                {addrResults.map((item, idx) => {
+                  const parts = item.display_name.split(',');
+                  const main = parts.slice(0, 2).join(' ').trim();
+                  const sub  = parts.slice(2, 5).join(', ').trim();
+                  return (
+                    <ListItem key={item.place_id} disablePadding divider={idx < addrResults.length - 1}>
+                      <ListItemButton
+                        onClick={() => handleAddrSelect(item)}
+                        sx={{ py: 1, '&:hover': { background: '#E3F2FD' } }}
+                      >
+                        <LocationOnIcon sx={{ fontSize: 18, color: '#1565C0', mr: 1, flexShrink: 0 }} />
+                        <ListItemText
+                          primary={main}
+                          secondary={sub}
+                          primaryTypographyProps={{ variant: 'body2', fontWeight: 600, noWrap: true }}
+                          secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary', noWrap: true }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            </Paper>
+          )}
+
+          {/* 위치 미확정 안내 배너 */}
+          {!sourceLocation && addrResults.length === 0 && !addrLoading && (
+            <Box sx={{
+              mt: 0.8, px: 1.5, py: 0.8, borderRadius: 1.5,
+              background: 'rgba(21,101,192,0.88)', color: 'white',
+              display: 'flex', alignItems: 'center', gap: 1,
+              backdropFilter: 'blur(4px)',
+            }}>
+              <LocationOnIcon sx={{ fontSize: 16 }} />
+              <Typography variant="caption" fontWeight={600}>
+                주소 검색 후 지도를 클릭하면 소음 발생 위치가 설정됩니다
+              </Typography>
+            </Box>
+          )}
+        </Box>
+
         <MapLibre3D
           sourceLocation={sourceLocation}
           barrierCoords={barrierSegments}
