@@ -317,9 +317,30 @@ export default function SiteAnalysisPage() {
             )}
           </Box>
           {drawMode === 'barrier' && (
-            <Box sx={{ mt: 1, p: 0.8, borderRadius: 1, background: '#FFF4E5', border: '1px solid #FFD89B' }}>
-              <Typography variant="caption" color="warning.main" fontWeight={600}>
-                지도에서 클릭 후 드래그하여 방음벽을 그리세요
+            <Box sx={{ mt: 1, p: 0.8, borderRadius: 1, background: '#EBF5FF', border: '1px solid #90CAF9' }}>
+              <Typography variant="caption" color="primary" fontWeight={600}>
+                ✏️ 지도에서 클릭 후 드래그 → 방음벽 선이 지도에 그려집니다
+              </Typography>
+            </Box>
+          )}
+
+          {barrierSegments.length > 0 && (
+            <Box sx={{ mt: 1, p: 1, borderRadius: 1, background: '#F0F7FF', border: '1px solid #BFDBFE' }}>
+              <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mb={0.4}>
+                방음벽 경로 감쇠 (ISO 9613-2)
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: 10 }}>소음원 → 방음벽</Typography>
+                  <Typography variant="caption" fontWeight={800} color="primary">d₁ = 건물별 자동계산</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: 10 }}>방음벽 → 수음점</Typography>
+                  <Typography variant="caption" fontWeight={800} color="primary">d₂ = 건물별 자동계산</Typography>
+                </Box>
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, display: 'block', mt: 0.5 }}>
+                * 각 건물 방향으로 경로가 방음벽과 교차할 때 d₁·d₂ 개별 계산 적용
               </Typography>
             </Box>
           )}
@@ -413,7 +434,12 @@ export default function SiteAnalysisPage() {
                     <Box sx={{ flex: 1, overflow: 'hidden' }}>
                       <Typography variant="body2" fontWeight={600} noWrap>{r.name || '건물'}</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {r.floors}층 · {r.distance}m{r.barrier_d1 > 0 ? ` · d₁=${r.barrier_d1}m` : ''}
+                        {r.floors}층 · {r.distance}m
+                      {r.barrier_d1 > 0 && (
+                        <Box component="span" sx={{ color: '#0068C3', fontWeight: 700, ml: 0.5 }}>
+                          · d₁={r.barrier_d1}m d₂={r.barrier_d2}m
+                        </Box>
+                      )}
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'right', flexShrink: 0 }}>

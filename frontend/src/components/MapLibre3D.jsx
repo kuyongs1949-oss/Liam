@@ -2,12 +2,9 @@ import { useEffect, useRef, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-const STYLE  = 'https://tiles.openfreemap.org/styles/bright';
-const EMPTY  = { type: 'FeatureCollection', features: [] };
+const STYLE   = 'https://tiles.openfreemap.org/styles/bright';
+const EMPTY   = { type: 'FeatureCollection', features: [] };
 const R_EARTH = 6371000;
-
-// 펜 커서 SVG (data URI)
-const PEN_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z' fill='%2300D4FF' stroke='%23003344' stroke-width='0.5'/%3E%3Cpath d='M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z' fill='%2300D4FF' stroke='%23003344' stroke-width='0.5'/%3E%3C/svg%3E") 0 24, crosshair`;
 
 /* ── 지구 기하 ── */
 function calcBearing(srcLat, srcLng, dstLat, dstLng) {
@@ -51,6 +48,117 @@ function makeCircle(lng, lat, r, steps = 64) {
     features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] }, properties: {} }] };
 }
 
+function haversineM(lng1, lat1, lng2, lat2) {
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R_EARTH * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+/* ════════════════════════════════════════════
+ * 캔버스에 방음벽 라인 그리기
+ * segments: [[lng,lat],[lng,lat]][]
+ * preview:  { x1,y1,x2,y2 } | null  (드래그 중 미리보기, 화면 픽셀)
+ * ════════════════════════════════════════════ */
+function drawBarriersOnCanvas(canvas, map, segments, preview) {
+  if (!canvas || !map) return;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  // lng/lat → 캔버스 픽셀 (map.project 사용)
+  const proj = ([lng, lat]) => { const p = map.project([lng, lat]); return [p.x, p.y]; };
+
+  // ── 영구 방음벽 라인들 ──
+  for (const seg of (segments || [])) {
+    const [p1, p2] = seg.map(proj);
+    const [x1, y1] = p1, [x2, y2] = p2;
+
+    // 외곽 흰 테두리
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.setLineDash([]);
+    ctx.stroke();
+
+    // 파란 실선
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = '#0068C3';
+    ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // 시작점 원
+    ctx.beginPath(); ctx.arc(x1, y1, 6, 0, Math.PI * 2);
+    ctx.fillStyle = 'white'; ctx.fill();
+    ctx.strokeStyle = '#0068C3'; ctx.lineWidth = 2.5; ctx.stroke();
+
+    // 끝점 원
+    ctx.beginPath(); ctx.arc(x2, y2, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#0068C3'; ctx.fill();
+    ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+
+    // 거리 + 높이 라벨 (d₁/d₂ 표기 위치 — 선 중간)
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const dist = haversineM(seg[0][0], seg[0][1], seg[1][0], seg[1][1]);
+    const distLabel = dist >= 1000 ? `${(dist/1000).toFixed(2)}km` : `${Math.round(dist)}m`;
+    const label = `방음벽 ${distLabel}`;
+    ctx.font = 'bold 11px Arial, sans-serif';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(0,60,140,0.88)';
+    ctx.fillRect(mx - tw/2 - 7, my - 22, tw + 14, 18);
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, mx, my - 13);
+  }
+
+  // ── 드래그 미리보기 ──
+  if (preview) {
+    const { x1, y1, x2, y2, s, d } = preview;
+
+    // 흰 테두리
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.setLineDash([8, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 점선 파란 실선
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = '#0099FF';
+    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.setLineDash([8, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 시작점
+    ctx.beginPath(); ctx.arc(x1, y1, 7, 0, Math.PI * 2);
+    ctx.fillStyle = 'white'; ctx.fill();
+    ctx.strokeStyle = '#0068C3'; ctx.lineWidth = 3; ctx.stroke();
+
+    // 끝점
+    ctx.beginPath(); ctx.arc(x2, y2, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#0099FF'; ctx.fill();
+    ctx.strokeStyle = 'white'; ctx.lineWidth = 2.5; ctx.stroke();
+
+    // 거리 라벨
+    if (s && d) {
+      const dist = haversineM(s[0], s[1], d[0], d[1]);
+      const label = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 - 18;
+      ctx.font = 'bold 12px Arial, sans-serif';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(0,60,140,0.88)';
+      ctx.fillRect(mx - tw/2 - 8, my - 12, tw + 16, 18);
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, mx, my - 3);
+    }
+  }
+}
+
 /* ════════════════════════════════════════════
  * 컴포넌트
  * ════════════════════════════════════════════ */
@@ -67,16 +175,20 @@ export default function MapLibre3D({
 }) {
   const containerRef  = useRef(null);
   const overlayRef    = useRef(null);
-  const drawCanvasRef = useRef(null);   // 펜 드래그 미리보기용 캔버스
+  const drawCanvasRef = useRef(null);
   const mapRef        = useRef(null);
   const loadedRef     = useRef(false);
   const pendingRef    = useRef({});
   const animRef       = useRef(null);
 
-  // 콜백 refs (항상 최신 유지)
+  // 항상 최신값 참조용 refs
+  const barrierCoordsRef = useRef(barrierCoords || []);
+  const previewRef       = useRef(null);    // 드래그 중 미리보기 상태
   const onBarrierCompleteRef = useRef(onBarrierComplete);
   const onSourceSetRef       = useRef(onSourceSet);
   const onBuildingSelectRef  = useRef(onBuildingSelect);
+
+  useEffect(() => { barrierCoordsRef.current = barrierCoords || []; }, [barrierCoords]);
   useEffect(() => { onBarrierCompleteRef.current = onBarrierComplete; }, [onBarrierComplete]);
   useEffect(() => { onSourceSetRef.current       = onSourceSet; },       [onSourceSet]);
   useEffect(() => { onBuildingSelectRef.current  = onBuildingSelect; },  [onBuildingSelect]);
@@ -84,6 +196,11 @@ export default function MapLibre3D({
   const setSource = useCallback((id, data) => {
     if (!loadedRef.current) { pendingRef.current[id] = data; return; }
     mapRef.current?.getSource(id)?.setData(data);
+  }, []);
+
+  // 캔버스 재렌더링 (지도 이동/줌/방음벽 변경 시 호출)
+  const redrawCanvas = useCallback(() => {
+    drawBarriersOnCanvas(drawCanvasRef.current, mapRef.current, barrierCoordsRef.current, previewRef.current);
   }, []);
 
   /* ══════════════════════════════════════════
@@ -101,6 +218,12 @@ export default function MapLibre3D({
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 
+    // 지도 이동/줌할 때마다 방음벽 캔버스 재렌더
+    map.on('move',   () => redrawCanvas());
+    map.on('zoom',   () => redrawCanvas());
+    map.on('rotate', () => redrawCanvas());
+    map.on('pitch',  () => redrawCanvas());
+
     map.on('load', () => {
       /* 동심 호 파장 */
       map.addSource('noise-arcs', { type: 'geojson', data: EMPTY });
@@ -117,7 +240,7 @@ export default function MapLibre3D({
         paint: {
           'fill-extrusion-color': ['case',
             ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1],
-            ['coalesce', ['get', 'color'], '#FF6B35'], '#546E7A'],
+            ['coalesce', ['get', 'color'], '#FA5B0F'], '#78909C'],
           'fill-extrusion-height': ['case',
             ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1],
             ['+', ['coalesce', ['get', 'height'], 9],
@@ -125,7 +248,7 @@ export default function MapLibre3D({
             ['coalesce', ['get', 'height'], 9]],
           'fill-extrusion-base': 0,
           'fill-extrusion-opacity': ['case',
-            ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1], 0.95, 0.35],
+            ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1], 0.92, 0.3],
         },
       });
       map.addLayer({ id: 'noise-label', type: 'symbol', source: 'noise-buildings',
@@ -135,33 +258,17 @@ export default function MapLibre3D({
           'text-size': 13, 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
           'text-anchor': 'center', 'text-allow-overlap': false, 'text-offset': [0, -1],
         },
-        paint: { 'text-color': ['coalesce', ['get', 'color'], '#FF6B35'],
+        paint: { 'text-color': ['coalesce', ['get', 'color'], '#FA5B0F'],
           'text-halo-color': 'rgba(255,255,255,0.96)', 'text-halo-width': 2.5 },
       });
-
-      /* 방음벽 */
-      map.addSource('barriers', { type: 'geojson', data: EMPTY });
-      map.addLayer({ id: 'barriers-casing', type: 'line', source: 'barriers',
-        paint: { 'line-color': '#FF6B35', 'line-width': 12, 'line-cap': 'round', 'line-opacity': 0.25 } });
-      map.addLayer({ id: 'barriers-line', type: 'line', source: 'barriers',
-        paint: { 'line-color': '#FF6B35', 'line-width': 5, 'line-cap': 'round',
-          'line-dasharray': [1, 0] } });
-      map.addLayer({ id: 'barriers-glow', type: 'line', source: 'barriers',
-        paint: { 'line-color': '#FFB300', 'line-width': 2, 'line-cap': 'round',
-          'line-blur': 3, 'line-opacity': 0.7 } });
-
-      map.addSource('barrier-preview', { type: 'geojson', data: EMPTY });
-      map.addLayer({ id: 'barrier-preview-line', type: 'line', source: 'barrier-preview',
-        paint: { 'line-color': '#00D4FF', 'line-width': 3,
-          'line-dasharray': [6, 3], 'line-opacity': 0.9 } });
 
       /* 소음원 마커 */
       map.addSource('source-loc', { type: 'geojson', data: EMPTY });
       map.addLayer({ id: 'source-halo', type: 'circle', source: 'source-loc',
-        paint: { 'circle-radius': 22, 'circle-color': '#FF6B35', 'circle-opacity': 0.15,
-          'circle-stroke-color': '#FF6B35', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.5 } });
+        paint: { 'circle-radius': 22, 'circle-color': '#FA5B0F', 'circle-opacity': 0.15,
+          'circle-stroke-color': '#FA5B0F', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.5 } });
       map.addLayer({ id: 'source-circle', type: 'circle', source: 'source-loc',
-        paint: { 'circle-radius': 12, 'circle-color': '#FF6B35',
+        paint: { 'circle-radius': 12, 'circle-color': '#FA5B0F',
           'circle-stroke-color': 'white', 'circle-stroke-width': 3 } });
       map.addLayer({ id: 'source-label', type: 'symbol', source: 'source-loc',
         layout: { 'text-field': '🔊', 'text-size': 16, 'text-anchor': 'center', 'text-allow-overlap': true } });
@@ -169,9 +276,9 @@ export default function MapLibre3D({
       /* 탐색 반경 */
       map.addSource('radius-ring', { type: 'geojson', data: EMPTY });
       map.addLayer({ id: 'radius-fill', type: 'fill', source: 'radius-ring',
-        paint: { 'fill-color': '#FF6B35', 'fill-opacity': 0.04 } });
+        paint: { 'fill-color': '#FA5B0F', 'fill-opacity': 0.04 } });
       map.addLayer({ id: 'radius-line', type: 'line', source: 'radius-ring',
-        paint: { 'line-color': '#FF6B35', 'line-width': 1.5, 'line-dasharray': [4, 3], 'line-opacity': 0.5 } });
+        paint: { 'line-color': '#FA5B0F', 'line-width': 1.5, 'line-dasharray': [4, 3], 'line-opacity': 0.5 } });
 
       /* 클릭 이벤트 */
       map.on('click', 'noise-buildings-3d', (e) => {
@@ -196,13 +303,10 @@ export default function MapLibre3D({
       mapRef.current = null;
       loadedRef.current = false;
     };
-  }, []);
+  }, [redrawCanvas]);
 
   /* ══════════════════════════════════════════
-   * 방음벽 그리기
-   * drawMode 변경 시 리스너 등록/해제.
-   * MapLibre 컨테이너를 pointer-events:none 으로 막아
-   * 오버레이가 이벤트를 100% 독점한다.
+   * 방음벽 그리기 모드
    * ══════════════════════════════════════════ */
   useEffect(() => {
     const overlay   = overlayRef.current;
@@ -212,33 +316,28 @@ export default function MapLibre3D({
     if (drawMode !== 'barrier') {
       overlay.style.pointerEvents   = 'none';
       overlay.style.cursor          = 'default';
-      container.style.pointerEvents = '';          // MapLibre 복원
+      container.style.pointerEvents = '';
       const map = mapRef.current;
-      if (map) {
-        map.dragPan.enable();
-        map.dragRotate.enable();
-        if (loadedRef.current) map.getSource('barrier-preview')?.setData(EMPTY);
-      }
+      if (map) { map.dragPan.enable(); map.dragRotate.enable(); }
+      previewRef.current = null;
+      redrawCanvas();
       return;
     }
 
-    // ── 배리어 모드 진입 ──────────────────────
-    // MapLibre 컨테이너 전체를 이벤트 차단 → 오버레이만 받음
     container.style.pointerEvents = 'none';
     overlay.style.pointerEvents   = 'all';
-    overlay.style.cursor          = PEN_CURSOR;
+    overlay.style.cursor          = 'crosshair';
 
     const map = mapRef.current;
     if (map) { map.dragPan.disable(); map.dragRotate.disable(); }
 
     let startPx = null;
 
-    // 오버레이 좌표(px) → 지도 좌표(lng,lat)
     const unproject = (cx, cy) => {
       const m = mapRef.current;
       if (!m) return null;
       const rect = overlay.getBoundingClientRect();
-      const ll   = m.unproject([cx - rect.left, cy - rect.top]);
+      const ll = m.unproject([cx - rect.left, cy - rect.top]);
       return [ll.lng, ll.lat];
     };
 
@@ -248,102 +347,34 @@ export default function MapLibre3D({
       startPx = { x: e.clientX, y: e.clientY };
     };
 
-    // canvas.width 재설정 = 캔버스 초기화 + 올바른 해상도 설정
-    // (initCanvas를 별도로 미리 호출하면 크기가 0일 수 있으므로 매 프레임 설정)
-    const haversineM = (lng1, lat1, lng2, lat2) => {
-      const R = 6371000;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLng = (lng2 - lng1) * Math.PI / 180;
-      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    };
-
-    const drawPreview = (sx, sy, ex, ey) => {
+    const onMove = (e) => {
+      if (!startPx) return;
       const canvas = drawCanvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-
-      // 매 프레임 canvas 크기 재설정 → 자동으로 clear + transform 리셋
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width  = rect.width  * dpr;
-      canvas.height = rect.height * dpr;
-      const ctx = canvas.getContext('2d');
-      ctx.scale(dpr, dpr);
-
-      const x1 = sx - rect.left, y1 = sy - rect.top;
-      const x2 = ex - rect.left, y2 = ey - rect.top;
-
-      // 흰 테두리 (어떤 배경에서도 선 보이게)
-      ctx.beginPath();
-      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.setLineDash([]);
-      ctx.stroke();
-
-      // 주 색상 실선 (파란색 — 방음벽)
-      ctx.beginPath();
-      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      ctx.strokeStyle = '#0068C3';
-      ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-      ctx.stroke();
-
-      // 시작점
-      ctx.beginPath();
-      ctx.arc(x1, y1, 7, 0, Math.PI * 2);
-      ctx.fillStyle = 'white'; ctx.fill();
-      ctx.strokeStyle = '#0068C3'; ctx.lineWidth = 3; ctx.stroke();
-
-      // 끝점
-      ctx.beginPath();
-      ctx.arc(x2, y2, 7, 0, Math.PI * 2);
-      ctx.fillStyle = '#0068C3'; ctx.fill();
-      ctx.strokeStyle = 'white'; ctx.lineWidth = 2.5; ctx.stroke();
-
-      // 거리 라벨
-      const s = unproject(sx, sy);
-      const d = unproject(ex, ey);
-      if (s && d) {
-        const dist = haversineM(s[0], s[1], d[0], d[1]);
-        const label = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
-        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 - 18;
-        ctx.font = 'bold 12px Arial, sans-serif';
-        const tw = ctx.measureText(label).width;
-        // 배경 (roundRect 대신 fillRect 사용 — 모든 브라우저 호환)
-        ctx.fillStyle = 'rgba(0,40,100,0.85)';
-        ctx.fillRect(mx - tw/2 - 8, my - 14, tw + 16, 20);
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(label, mx, my - 4);
-      }
-    };
-
-    const clearPreview = () => {
-      const canvas = drawCanvasRef.current;
-      if (!canvas) return;
-      // width 재설정으로 캔버스 완전 초기화
-      canvas.width = canvas.width;
-    };
-
-    const onMove = (e) => {
-      if (!startPx) return;
-      drawPreview(startPx.x, startPx.y, e.clientX, e.clientY);
+      const s = unproject(startPx.x, startPx.y);
+      const d = unproject(e.clientX, e.clientY);
+      previewRef.current = {
+        x1: startPx.x - rect.left, y1: startPx.y - rect.top,
+        x2: e.clientX  - rect.left, y2: e.clientY  - rect.top,
+        s, d,
+      };
+      redrawCanvas();
     };
 
     const onUp = (e) => {
       if (!startPx) return;
       const sp = startPx;
       startPx = null;
-      clearPreview();
+      previewRef.current = null;
       const s = unproject(sp.x, sp.y);
       const d = unproject(e.clientX, e.clientY);
-      if (!s || !d) return;
-      if (Math.hypot(s[0] - d[0], s[1] - d[1]) > 0.000001)
+      if (s && d && Math.hypot(s[0] - d[0], s[1] - d[1]) > 0.000001) {
         onBarrierCompleteRef.current?.([s, d]);
+      }
+      redrawCanvas();
     };
 
-    // mousedown: 오버레이에만 (포커스가 여기 있으므로)
-    // mousemove/mouseup: document (드래그 중 영역 밖 이동 대응)
     overlay.addEventListener('mousedown', onDown);
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup',   onUp);
@@ -352,19 +383,20 @@ export default function MapLibre3D({
       overlay.removeEventListener('mousedown', onDown);
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup',   onUp);
-      clearPreview();
       container.style.pointerEvents = '';
       overlay.style.pointerEvents   = 'none';
       overlay.style.cursor          = 'default';
-      startPx = null;
-      const m = mapRef.current;
-      if (m) {
-        m.dragPan.enable();
-        m.dragRotate.enable();
-        if (loadedRef.current) m.getSource('barrier-preview')?.setData(EMPTY);
-      }
+      if (mapRef.current) { mapRef.current.dragPan.enable(); mapRef.current.dragRotate.enable(); }
+      previewRef.current = null;
+      redrawCanvas();
     };
-  }, [drawMode]);
+  }, [drawMode, redrawCanvas]);
+
+  /* ── barrierCoords 변경 시 캔버스 재렌더 ── */
+  useEffect(() => {
+    barrierCoordsRef.current = barrierCoords || [];
+    redrawCanvas();
+  }, [barrierCoords, barrierHeight, redrawCanvas]);
 
   /* ── 소음원 위치 ── */
   useEffect(() => {
@@ -392,15 +424,13 @@ export default function MapLibre3D({
       .filter(f => f.properties?.exceeds_65db === 1)
       .map(f => {
         const c = getPolyCentroid(f);
-        return c ? { bearing: calcBearing(lat, lng, c[1], c[0]), color: f.properties.color || '#FF6B35' } : null;
-      })
-      .filter(Boolean);
+        return c ? { bearing: calcBearing(lat, lng, c[1], c[0]), color: f.properties.color || '#FA5B0F' } : null;
+      }).filter(Boolean);
 
     if (!bears.length) { setSource('noise-arcs', EMPTY); return; }
 
     const MAX_R = 280, PERIOD = 2200, N_RINGS = 4;
     let t = 0, last = null;
-
     const animate = (ts) => {
       if (!loadedRef.current || !mapRef.current) return;
       if (last !== null) t += ts - last;
@@ -429,19 +459,6 @@ export default function MapLibre3D({
     return () => cancelAnimationFrame(animRef.current);
   }, [sourceLocation, buildingGeoJSON, setSource]);
 
-  /* ── 방음벽 렌더링 ── */
-  useEffect(() => {
-    if (!barrierCoords?.length) { setSource('barriers', EMPTY); return; }
-    setSource('barriers', {
-      type: 'FeatureCollection',
-      features: barrierCoords.map(seg => ({
-        type: 'Feature',
-        geometry: { type: 'LineString', coordinates: seg },
-        properties: { height: barrierHeight },
-      })),
-    });
-  }, [barrierCoords, barrierHeight, setSource]);
-
   /* ── 주소 이동 ── */
   useEffect(() => {
     if (!flyToLocation) return;
@@ -457,27 +474,17 @@ export default function MapLibre3D({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {/* 방음벽 그리기 오버레이 — pointerEvents는 JS로 제어 */}
-      <div
-        ref={overlayRef}
-        style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          pointerEvents: 'none',
-          zIndex: 3,
-          background: 'transparent',
-          userSelect: 'none',
-        }}
-      />
-      {/* 드래그 미리보기 캔버스 — 항상 최상단, 이벤트 무시 */}
-      <canvas
-        ref={drawCanvasRef}
-        style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          width: '100%', height: '100%',
-          pointerEvents: 'none',
-          zIndex: 4,
-        }}
-      />
+      {/* 방음벽 그리기 이벤트 수신 오버레이 */}
+      <div ref={overlayRef} style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        pointerEvents: 'none', zIndex: 3, background: 'transparent', userSelect: 'none',
+      }} />
+      {/* 방음벽 + 미리보기 캔버스 (항상 최상단, 이벤트 무시) */}
+      <canvas ref={drawCanvasRef} style={{
+        position: 'absolute', top: 0, left: 0,
+        width: '100%', height: '100%',
+        pointerEvents: 'none', zIndex: 4,
+      }} />
     </div>
   );
 }
