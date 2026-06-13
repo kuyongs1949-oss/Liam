@@ -18,7 +18,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || '*';
 
 // 미들웨어
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.use(cors({ origin: FRONTEND_URL }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 
