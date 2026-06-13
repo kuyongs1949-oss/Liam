@@ -10,10 +10,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: CALCULATOR_URL
-        fromService:
-          type: web
-          name: noise-calculator
-          property: url
+        value: https://noise-calculator.onrender.com
 
   - type: web
     name: noise-calculator
