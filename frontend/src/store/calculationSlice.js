@@ -61,7 +61,7 @@ const calculationSlice = createSlice({
         state.loading = true; state.error = null;
       })
       .addCase(runQuickCalculation.fulfilled, (state, { payload }) => {
-        state.loading = false; state.quickResult = payload.data;
+        state.loading = false; state.quickResult = payload.data ?? payload;
       })
       .addCase(runQuickCalculation.rejected, (state, { payload }) => {
         state.loading = false; state.error = payload;
@@ -73,7 +73,7 @@ const calculationSlice = createSlice({
         state.loading = true; state.error = null;
       })
       .addCase(runMultiCalculation.fulfilled, (state, { payload }) => {
-        state.loading = false; state.multiResult = payload.data;
+        state.loading = false; state.multiResult = payload.data ?? payload;
       })
       .addCase(runMultiCalculation.rejected, (state, { payload }) => {
         state.loading = false; state.error = payload;

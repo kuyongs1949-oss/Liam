@@ -29,7 +29,7 @@ router.post(
       // Python 서버 시도 → 실패하면 Node.js 엔진 사용
       let result;
       try {
-        result = (await CompensationService.quickCalculate(req.body)).data ?? await CompensationService.quickCalculate(req.body);
+        result = await CompensationService.quickCalculate(req.body);
       } catch {
         result = noiseEngine.quickCalculate(req.body);
       }
@@ -55,8 +55,7 @@ router.post(
     try {
       let result;
       try {
-        const r = await CompensationService.multiCalculate(req.body);
-        result = r.data ?? r;
+        result = await CompensationService.multiCalculate(req.body);
       } catch {
         result = noiseEngine.multiCalculate(req.body);
       }
