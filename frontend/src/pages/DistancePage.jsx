@@ -261,7 +261,7 @@ export default function DistancePage() {
   })();
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 56px)', position: 'relative' }}>
+    <Box sx={{ display: 'flex', height: '100%', position: 'relative' }}>
 
       {/* 지도 영역 */}
       <Box sx={{ flex: 1, position: 'relative' }}>

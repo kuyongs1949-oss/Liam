@@ -179,7 +179,7 @@ export default function SiteAnalysisPage() {
   const totalComp = exceeding.reduce((s, r) => s + r.total_compensation, 0);
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 56px)', position: 'relative' }}>
+    <Box sx={{ display: 'flex', height: '100%', position: 'relative' }}>
 
       {/* ══════ 지도 (전체 배경) ══════ */}
       <Box sx={{ position: 'absolute', inset: 0 }}>
