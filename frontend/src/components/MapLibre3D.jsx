@@ -98,9 +98,12 @@ export default function MapLibre3D({
     const onDown = (e) => {
       if (drawModeRef.current !== 'barrier') return;
       e.preventDefault();
+      e.stopPropagation();
       startPxRef.current = { x: e.clientX, y: e.clientY };
     };
+    // document에 등록 → 드래그 중 overlay 밖으로 나가도 preview 유지
     const onMove = (e) => {
+      if (drawModeRef.current !== 'barrier') return;
       if (!startPxRef.current || !mapRef.current || !loadedRef.current) return;
       const s = unproject(startPxRef.current.x, startPxRef.current.y);
       const d = unproject(e.clientX, e.clientY);
@@ -114,19 +117,22 @@ export default function MapLibre3D({
       if (!startPxRef.current) return;
       const sp = startPxRef.current;
       startPxRef.current = null;
-      if (mapRef.current && loadedRef.current) mapRef.current.getSource('barrier-preview')?.setData(EMPTY);
+      if (mapRef.current && loadedRef.current) {
+        mapRef.current.getSource('barrier-preview')?.setData(EMPTY);
+      }
       const s = unproject(sp.x, sp.y);
       const d = unproject(e.clientX, e.clientY);
       if (!s || !d) return;
-      if (Math.hypot(s[0] - d[0], s[1] - d[1]) > 0.000001) onBarrierCompleteRef.current?.([s, d]);
+      const dist = Math.hypot(s[0] - d[0], s[1] - d[1]);
+      if (dist > 0.000001) onBarrierCompleteRef.current?.([s, d]);
     };
 
     overlay.addEventListener('mousedown', onDown);
-    overlay.addEventListener('mousemove', onMove);
+    document.addEventListener('mousemove', onMove);  // overlay → document
     document.addEventListener('mouseup', onUp);
     return () => {
       overlay.removeEventListener('mousedown', onDown);
-      overlay.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
   }, []);
