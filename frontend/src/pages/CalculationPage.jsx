@@ -8,11 +8,15 @@ import CalculateIcon from '@mui/icons-material/Calculate';
 import GroupsIcon from '@mui/icons-material/Groups';
 import MapIcon from '@mui/icons-material/Map';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
+import StraightenIcon from '@mui/icons-material/Straighten';
+import StreetviewIcon from '@mui/icons-material/Streetview';
 
 import CalculationForm from '../components/CalculationForm';
 import MapViewer from '../components/MapViewer';
 import CompensationTable from '../components/CompensationTable';
 import SiteAnalysisPage from './SiteAnalysisPage';
+import DistancePage from './DistancePage';
+import StreetViewPage from './StreetViewPage';
 
 function TabPanel({ children, value, index }) {
   return value === index ? <Box>{children}</Box> : null;
@@ -82,13 +86,16 @@ export default function CalculationPage() {
           <Tab icon={<ViewInArIcon sx={{ fontSize: 17 }} />} iconPosition="start" label="3D 현장 분석" />
           <Tab icon={<CalculateIcon sx={{ fontSize: 17 }} />} iconPosition="start" label="간편 계산" />
           <Tab icon={<GroupsIcon sx={{ fontSize: 17 }} />} iconPosition="start" label="다중 세대 계산" />
+          <Tab icon={<StraightenIcon sx={{ fontSize: 17 }} />} iconPosition="start" label="거리재기" />
+          <Tab icon={<StreetviewIcon sx={{ fontSize: 17 }} />} iconPosition="start" label="거리뷰" />
         </Tabs>
       </AppBar>
 
-      <Container maxWidth="xl" sx={{ py: 2.5 }}>
+      <Container maxWidth="xl" disableGutters sx={{ py: tab >= 3 ? 0 : 2.5 }}>
         <TabPanel value={tab} index={0}>
           <SiteAnalysisPage />
         </TabPanel>
+
 
         <TabPanel value={tab} index={1}>
           <Grid container spacing={3}>
@@ -123,6 +130,14 @@ export default function CalculationPage() {
               <CompensationTable />
             </Grid>
           </Grid>
+        </TabPanel>
+
+        <TabPanel value={tab} index={3}>
+          <DistancePage />
+        </TabPanel>
+
+        <TabPanel value={tab} index={4}>
+          <StreetViewPage />
         </TabPanel>
       </Container>
 
