@@ -34,7 +34,7 @@ export default function CalculationPage() {
           <EngineeringIcon sx={{ mr: 1.5, fontSize: 28 }} />
           <Box>
             <Typography variant="h6" fontWeight={700} lineHeight={1.2}>
-              소음영향 평가 시스템
+              현대엔지니어링 환경경영팀 소음영향모델링 시스템
             </Typography>
             <Typography variant="caption" sx={{ opacity: 0.8 }}>
               건설현장 소음 · 환경부 보상금 산출 | ISO 9613-2
