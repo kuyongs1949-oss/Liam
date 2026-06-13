@@ -14,7 +14,7 @@ class CompensationService {
    */
   static async quickCalculate(payload) {
     const resp = await axios.post(`${CALCULATOR_URL}/calculate/quick`, payload, {
-      timeout: 30_000,
+      timeout: 5_000,
     });
     return resp.data;
   }
@@ -24,7 +24,7 @@ class CompensationService {
    */
   static async multiCalculate(payload) {
     const resp = await axios.post(`${CALCULATOR_URL}/calculate/multi`, payload, {
-      timeout: 120_000,
+      timeout: 10_000,
     });
     return resp.data;
   }
