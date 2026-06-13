@@ -198,17 +198,21 @@ export default function MapLibre3D({
   }, []);
 
   /* ══════════════════════════════════════════
-   * 방음벽 그리기 — drawMode가 변할 때마다 등록/해제
+   * 방음벽 그리기
+   * drawMode 변경 시 리스너 등록/해제.
+   * MapLibre 컨테이너를 pointer-events:none 으로 막아
+   * 오버레이가 이벤트를 100% 독점한다.
    * ══════════════════════════════════════════ */
   useEffect(() => {
-    const overlay = overlayRef.current;
-    const map     = mapRef.current;
-    if (!overlay) return;
+    const overlay   = overlayRef.current;
+    const container = containerRef.current;
+    if (!overlay || !container) return;
 
     if (drawMode !== 'barrier') {
-      // 방음벽 모드 해제
-      overlay.style.pointerEvents = 'none';
-      overlay.style.cursor = 'default';
+      overlay.style.pointerEvents   = 'none';
+      overlay.style.cursor          = 'default';
+      container.style.pointerEvents = '';          // MapLibre 복원
+      const map = mapRef.current;
       if (map) {
         map.dragPan.enable();
         map.dragRotate.enable();
@@ -217,23 +221,29 @@ export default function MapLibre3D({
       return;
     }
 
-    // ── 방음벽 모드 진입 ──
-    overlay.style.pointerEvents = 'all';
-    overlay.style.cursor = PEN_CURSOR;
+    // ── 배리어 모드 진입 ──────────────────────
+    // MapLibre 컨테이너 전체를 이벤트 차단 → 오버레이만 받음
+    container.style.pointerEvents = 'none';
+    overlay.style.pointerEvents   = 'all';
+    overlay.style.cursor          = PEN_CURSOR;
+
+    const map = mapRef.current;
     if (map) { map.dragPan.disable(); map.dragRotate.disable(); }
 
-    let startPx = null;  // 로컬 변수로 관리 (ref 불필요)
+    let startPx = null;
 
+    // 오버레이 좌표(px) → 지도 좌표(lng,lat)
     const unproject = (cx, cy) => {
-      if (!mapRef.current) return null;
+      const m = mapRef.current;
+      if (!m) return null;
       const rect = overlay.getBoundingClientRect();
-      const ll   = mapRef.current.unproject([cx - rect.left, cy - rect.top]);
+      const ll   = m.unproject([cx - rect.left, cy - rect.top]);
       return [ll.lng, ll.lat];
     };
 
     const onDown = (e) => {
+      if (e.button !== 0) return;        // 좌클릭만
       e.preventDefault();
-      e.stopPropagation();
       startPx = { x: e.clientX, y: e.clientY };
     };
 
@@ -244,7 +254,8 @@ export default function MapLibre3D({
       if (!s || !d) return;
       mapRef.current?.getSource('barrier-preview')?.setData({
         type: 'FeatureCollection',
-        features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [s, d] }, properties: {} }],
+        features: [{ type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [s, d] }, properties: {} }],
       });
     };
 
@@ -256,31 +267,33 @@ export default function MapLibre3D({
       const s = unproject(sp.x, sp.y);
       const d = unproject(e.clientX, e.clientY);
       if (!s || !d) return;
-      if (Math.hypot(s[0] - d[0], s[1] - d[1]) > 0.000001) {
+      if (Math.hypot(s[0] - d[0], s[1] - d[1]) > 0.000001)
         onBarrierCompleteRef.current?.([s, d]);
-      }
     };
 
-    // overlay에만 mousedown, 나머지는 document (드래그가 영역 밖으로 나가도 동작)
+    // mousedown: 오버레이에만 (포커스가 여기 있으므로)
+    // mousemove/mouseup: document (드래그 중 영역 밖 이동 대응)
     overlay.addEventListener('mousedown', onDown);
     document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup',  onUp);
+    document.addEventListener('mouseup',   onUp);
 
     return () => {
       overlay.removeEventListener('mousedown', onDown);
       document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup',  onUp);
-      // 모드 이탈 시 정리
-      overlay.style.pointerEvents = 'none';
-      overlay.style.cursor = 'default';
+      document.removeEventListener('mouseup',   onUp);
+      // 정리: 포인터 이벤트 복원
+      container.style.pointerEvents = '';
+      overlay.style.pointerEvents   = 'none';
+      overlay.style.cursor          = 'default';
       startPx = null;
-      if (mapRef.current) {
-        mapRef.current.dragPan.enable();
-        mapRef.current.dragRotate.enable();
-        if (loadedRef.current) mapRef.current.getSource('barrier-preview')?.setData(EMPTY);
+      const m = mapRef.current;
+      if (m) {
+        m.dragPan.enable();
+        m.dragRotate.enable();
+        if (loadedRef.current) m.getSource('barrier-preview')?.setData(EMPTY);
       }
     };
-  }, [drawMode]);   // drawMode가 변할 때마다 재등록
+  }, [drawMode]);
 
   /* ── 소음원 위치 ── */
   useEffect(() => {
