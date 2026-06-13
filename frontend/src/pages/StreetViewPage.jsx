@@ -105,152 +105,129 @@ export default function StreetViewPage() {
   };
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 120px)', position: 'relative', background: '#F0FDF4' }}>
+    <Box sx={{ display: 'flex', height: 'calc(100vh - 56px)', position: 'relative' }}>
 
       {/* 지도 */}
       <Box sx={{ flex: 1, position: 'relative' }}>
         <div ref={containerRef} style={{ width: '100%', height: '100%', cursor: 'crosshair' }} />
 
-        {/* 주소 검색 */}
-        <Box sx={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10, width: '90%', maxWidth: 460 }}>
-          <Box sx={{ display: 'flex', gap: 0.8 }}>
+        {/* 주소 검색 — 구글 스타일 */}
+        <Box sx={{ position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10, maxWidth: 460 }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField size="small" fullWidth placeholder="주소 검색 후 지도를 클릭하세요" value={addrQuery}
               onChange={(e) => { setAddrQuery(e.target.value); if (!e.target.value.trim()) setAddrResults([]); }}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddrSearch(); if (e.key === 'Escape') setAddrResults([]); }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px 0 0 10px', background: 'rgba(255,255,255,0.97)', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' } }}
-              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18, color: '#0EA5E9' }} /></InputAdornment> }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 20, color: '#5F6368' }} /></InputAdornment> }}
+              sx={{ '& .MuiOutlinedInput-root': { height: 48, borderRadius: 28, background: '#fff', boxShadow: '0 2px 6px rgba(60,64,67,0.3)', '& fieldset': { border: 'none' } } }}
             />
-            <Button variant="contained" color="secondary" size="small"
-              sx={{ px: 2, borderRadius: '0 10px 10px 0', minWidth: 64, flexShrink: 0, fontWeight: 700 }}
-              onClick={handleAddrSearch} disabled={searching || !addrQuery.trim()}>
-              {searching ? <CircularProgress size={14} color="inherit" /> : '검색'}
+            <Button variant="contained" color="primary" onClick={handleAddrSearch}
+              disabled={searching || !addrQuery.trim()}
+              sx={{ height: 48, px: 2.5, borderRadius: 24, flexShrink: 0, boxShadow: '0 2px 6px rgba(60,64,67,0.3)' }}>
+              {searching ? <CircularProgress size={16} color="inherit" /> : '검색'}
             </Button>
           </Box>
           {addrResults.length > 0 && (
-            <Paper elevation={3} sx={{ mt: 0.5, borderRadius: 1.5, overflow: 'hidden', maxHeight: 240, overflowY: 'auto', border: '1px solid #BAE6FD' }}>
-              <List dense disablePadding>
-                {addrResults.map((item, i) => (
-                  <ListItem key={item.place_id} disablePadding divider={i < addrResults.length - 1}>
-                    <Box component="button" onClick={() => handleAddrSelect(item)}
-                      sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1, border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', '&:hover': { background: '#F0F9FF' } }}>
-                      <LocationOnIcon sx={{ fontSize: 16, color: '#0EA5E9', flexShrink: 0 }} />
-                      <Box>
-                        <Typography variant="body2" fontWeight={600} noWrap>{item.display_name.split(',').slice(0, 2).join(' ')}</Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>{item.display_name.split(',').slice(2, 5).join(', ')}</Typography>
-                      </Box>
-                    </Box>
-                  </ListItem>
-                ))}
-              </List>
+            <Paper elevation={3} sx={{ mt: 0.5, borderRadius: 2, overflow: 'hidden', maxHeight: 240, overflowY: 'auto' }}>
+              {addrResults.map((item, i) => (
+                <Box key={item.place_id} onClick={() => handleAddrSelect(item)} sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.2,
+                  cursor: 'pointer', borderBottom: i < addrResults.length - 1 ? '1px solid #F1F3F4' : 'none',
+                  '&:hover': { background: '#F8F9FA' },
+                }}>
+                  <LocationOnIcon sx={{ fontSize: 18, color: '#EA4335', flexShrink: 0 }} />
+                  <Box sx={{ overflow: 'hidden' }}>
+                    <Typography variant="body2" fontWeight={500} noWrap>{item.display_name.split(',').slice(0, 2).join(' ')}</Typography>
+                    <Typography variant="caption" noWrap>{item.display_name.split(',').slice(2, 5).join(', ')}</Typography>
+                  </Box>
+                </Box>
+              ))}
             </Paper>
           )}
         </Box>
 
         {/* 안내 */}
         {!picked && (
-          <Box sx={{
+          <Paper elevation={3} sx={{
             position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)',
-            zIndex: 5, background: 'rgba(255,255,255,0.95)', borderRadius: 2,
-            px: 2.5, py: 1, boxShadow: '0 2px 12px rgba(0,0,0,0.1)', border: '1px solid #BAE6FD',
-            display: 'flex', alignItems: 'center', gap: 1, pointerEvents: 'none',
+            zIndex: 5, borderRadius: 24, px: 3, py: 1.2,
+            display: 'flex', alignItems: 'center', gap: 1.5, pointerEvents: 'none',
           }}>
-            <StreetviewIcon sx={{ color: '#0EA5E9', fontSize: 18 }} />
-            <Typography variant="body2" fontWeight={600} color="text.primary">
+            <StreetviewIcon sx={{ color: '#1A73E8', fontSize: 16 }} />
+            <Typography variant="body2" fontWeight={500}>
               지도를 클릭하면 거리뷰 위치가 선택됩니다
             </Typography>
-          </Box>
+          </Paper>
         )}
       </Box>
 
-      {/* 오른쪽 패널 */}
+      {/* 오른쪽 패널 — 구글 사이드바 */}
       <Box sx={{
-        width: 280, flexShrink: 0, p: 2,
-        background: '#FFFFFF', borderLeft: '2px solid #BAE6FD',
-        overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5,
+        width: 280, flexShrink: 0,
+        background: '#FFFFFF', boxShadow: '-2px 0 8px rgba(60,64,67,0.2)',
+        overflowY: 'auto', display: 'flex', flexDirection: 'column',
+        '&::-webkit-scrollbar': { width: 4 },
+        '&::-webkit-scrollbar-thumb': { background: '#BDC1C6', borderRadius: 2 },
       }}>
-        <Typography variant="subtitle1" fontWeight={800} sx={{ color: '#0284C7' }}>
-          🔭 거리뷰 / 로드뷰
-        </Typography>
+        <Box sx={{ px: 2, pt: 2, pb: 1, borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <StreetviewIcon sx={{ fontSize: 18, color: '#1A73E8' }} />
+          <Typography variant="subtitle2" fontWeight={600}>거리뷰 / 로드뷰</Typography>
+        </Box>
 
-        {!picked ? (
-          <Box sx={{ p: 2, borderRadius: 2, background: '#F0F9FF', border: '1.5px dashed #BAE6FD', textAlign: 'center' }}>
-            <StreetviewIcon sx={{ color: '#0EA5E9', fontSize: 36, mb: 1 }} />
-            <Typography variant="body2" color="text.secondary">지도를 클릭해 위치를 선택하세요</Typography>
-          </Box>
-        ) : (
-          <>
-            <Box sx={{ p: 1.5, borderRadius: 2, background: '#F0F9FF', border: '1.5px solid #BAE6FD' }}>
-              <Typography variant="caption" color="text.secondary" display="block" mb={0.3}>선택된 위치</Typography>
-              <Typography variant="caption" fontWeight={700} color="#0284C7" sx={{ fontFamily: 'monospace', fontSize: 11 }}>
-                {picked.lat.toFixed(6)}, {picked.lng.toFixed(6)}
-              </Typography>
+        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5, flex: 1 }}>
+          {!picked ? (
+            <Box sx={{ p: 2.5, borderRadius: 2, background: '#F8F9FA', textAlign: 'center' }}>
+              <StreetviewIcon sx={{ color: '#BDC1C6', fontSize: 40, mb: 1 }} />
+              <Typography variant="body2" color="text.secondary">지도를 클릭해 위치를 선택하세요</Typography>
             </Box>
+          ) : (
+            <>
+              <Box sx={{ p: 1.5, borderRadius: 2, background: '#E8F0FE' }}>
+                <Typography variant="caption" color="text.secondary" display="block" mb={0.3}>선택된 위치</Typography>
+                <Typography variant="caption" fontWeight={600} color="primary" sx={{ fontFamily: 'monospace', fontSize: 11 }}>
+                  {picked.lat.toFixed(6)}, {picked.lng.toFixed(6)}
+                </Typography>
+              </Box>
 
-            <Typography variant="caption" fontWeight={700} color="text.secondary">거리뷰 서비스 선택</Typography>
+              <Typography variant="caption" fontWeight={600} color="text.secondary">거리뷰 서비스 선택</Typography>
 
-            {/* 네이버 로드뷰 */}
-            <Button
-              fullWidth variant="contained" size="large"
-              startIcon={<OpenInNewIcon />}
-              onClick={openNaverRoadview}
-              sx={{
-                py: 1.5, borderRadius: 2, fontWeight: 700, fontSize: 14,
-                background: 'linear-gradient(135deg, #03C75A, #00B14F)',
-                boxShadow: '0 4px 14px rgba(3,199,90,0.35)',
-                '&:hover': { background: 'linear-gradient(135deg, #02B350, #009E46)' },
-              }}>
-              네이버 로드뷰 열기
-            </Button>
+              <Button fullWidth variant="contained" size="large" startIcon={<OpenInNewIcon />}
+                onClick={openNaverRoadview}
+                sx={{ borderRadius: 20, fontWeight: 600, background: '#03C75A', '&:hover': { background: '#02B350' } }}>
+                네이버 로드뷰 열기
+              </Button>
 
-            {/* 카카오 로드뷰 */}
-            <Button
-              fullWidth variant="contained" size="large"
-              startIcon={<OpenInNewIcon />}
-              onClick={openKakaoRoadview}
-              sx={{
-                py: 1.5, borderRadius: 2, fontWeight: 700, fontSize: 14,
-                background: 'linear-gradient(135deg, #FAE100, #F7CD00)',
-                color: '#3C1E1E',
-                boxShadow: '0 4px 14px rgba(250,225,0,0.35)',
-                '&:hover': { background: 'linear-gradient(135deg, #F0D800, #E8C200)' },
-              }}>
-              카카오 로드뷰 열기
-            </Button>
+              <Button fullWidth variant="contained" size="large" startIcon={<OpenInNewIcon />}
+                onClick={openKakaoRoadview}
+                sx={{ borderRadius: 20, fontWeight: 600, background: '#FEE500', color: '#3C1E1E', '&:hover': { background: '#F0D800' } }}>
+                카카오 로드뷰 열기
+              </Button>
 
-            {/* 구글 스트리트뷰 */}
-            <Button
-              fullWidth variant="contained" size="large"
-              startIcon={<OpenInNewIcon />}
-              onClick={openGoogleStreetView}
-              sx={{
-                py: 1.5, borderRadius: 2, fontWeight: 700, fontSize: 14,
-                background: 'linear-gradient(135deg, #4285F4, #2B6DE8)',
-                boxShadow: '0 4px 14px rgba(66,133,244,0.35)',
-                '&:hover': { background: 'linear-gradient(135deg, #3274E0, #1A5DD0)' },
-              }}>
-              구글 스트리트뷰 열기
-            </Button>
+              <Button fullWidth variant="contained" size="large" startIcon={<OpenInNewIcon />}
+                onClick={openGoogleStreetView}
+                sx={{ borderRadius: 20, fontWeight: 600, background: '#4285F4', '&:hover': { background: '#3274E0' } }}>
+                구글 스트리트뷰 열기
+              </Button>
 
-            <Alert severity="info" sx={{ fontSize: 11 }}>
-              버튼 클릭 시 새 탭에서 해당 위치의 거리뷰가 열립니다
-            </Alert>
+              <Alert severity="info" sx={{ fontSize: 11 }}>
+                버튼 클릭 시 새 탭에서 해당 위치의 거리뷰가 열립니다
+              </Alert>
 
-            <Button
-              size="small" color="error" variant="outlined" fullWidth
-              startIcon={<DeleteIcon />}
-              onClick={() => { setPicked(null); setViewMode(null); markerRef.current?.remove(); }}>
-              위치 초기화
-            </Button>
-          </>
-        )}
+              <Button size="small" color="error" variant="outlined" fullWidth
+                startIcon={<DeleteIcon />} sx={{ borderRadius: 20 }}
+                onClick={() => { setPicked(null); setViewMode(null); markerRef.current?.remove(); }}>
+                위치 초기화
+              </Button>
+            </>
+          )}
 
-        <Box sx={{ p: 1.2, borderRadius: 1.5, background: '#F0F9FF', border: '1px solid #BAE6FD', mt: 'auto' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, lineHeight: 1.6 }}>
-            📍 지도 클릭 → 위치 선택<br />
-            🟢 네이버 로드뷰 (국내 커버리지 최우수)<br />
-            🟡 카카오 로드뷰 (카카오맵 연동)<br />
-            🔵 구글 스트리트뷰 (전세계 커버리지)
-          </Typography>
+          <Box sx={{ p: 1.5, borderRadius: 2, background: '#F8F9FA', mt: 'auto' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11, lineHeight: 1.7 }}>
+              지도 클릭 → 위치 선택<br />
+              네이버 로드뷰 (국내 커버리지 최우수)<br />
+              카카오 로드뷰 (카카오맵 연동)<br />
+              구글 스트리트뷰 (전세계 커버리지)
+            </Typography>
+          </Box>
         </Box>
       </Box>
     </Box>

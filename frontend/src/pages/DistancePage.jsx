@@ -261,130 +261,131 @@ export default function DistancePage() {
   })();
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 120px)', position: 'relative', background: '#F0FDF4' }}>
+    <Box sx={{ display: 'flex', height: 'calc(100vh - 56px)', position: 'relative' }}>
 
       {/* 지도 영역 */}
       <Box sx={{ flex: 1, position: 'relative' }}>
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-        {/* 그리기 캔버스 */}
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: 'absolute', top: 0, left: 0,
-            width: '100%', height: '100%',
-            cursor: 'crosshair', zIndex: 3,
-          }}
-        />
+        <canvas ref={canvasRef} style={{
+          position: 'absolute', top: 0, left: 0,
+          width: '100%', height: '100%', cursor: 'crosshair', zIndex: 3,
+        }} />
 
-        {/* 주소 검색 */}
-        <Box sx={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10, width: '90%', maxWidth: 440 }}>
-          <Box sx={{ display: 'flex', gap: 0.8 }}>
-            <TextField size="small" fullWidth placeholder="주소 검색" value={addrQuery}
+        {/* 주소 검색 — 구글 스타일 */}
+        <Box sx={{ position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10, maxWidth: 440 }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <TextField size="small" fullWidth placeholder="주소 검색..." value={addrQuery}
               onChange={(e) => { setAddrQuery(e.target.value); if (!e.target.value.trim()) setAddrResults([]); }}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddrSearch(); }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px 0 0 10px', background: 'rgba(255,255,255,0.97)', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' } }}
-              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18, color: '#16A34A' }} /></InputAdornment> }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 20, color: '#5F6368' }} /></InputAdornment> }}
+              sx={{ '& .MuiOutlinedInput-root': { height: 48, borderRadius: 28, background: '#fff', boxShadow: '0 2px 6px rgba(60,64,67,0.3)', '& fieldset': { border: 'none' } } }}
             />
-            <Button variant="contained" color="primary" size="small"
-              sx={{ px: 2, borderRadius: '0 10px 10px 0', minWidth: 64, flexShrink: 0, fontWeight: 700 }}
-              onClick={handleAddrSearch} disabled={searching || !addrQuery.trim()}>
-              {searching ? <CircularProgress size={14} color="inherit" /> : '검색'}
+            <Button variant="contained" color="primary" onClick={handleAddrSearch}
+              disabled={searching || !addrQuery.trim()}
+              sx={{ height: 48, px: 2.5, borderRadius: 24, flexShrink: 0, boxShadow: '0 2px 6px rgba(60,64,67,0.3)' }}>
+              {searching ? <CircularProgress size={16} color="inherit" /> : '검색'}
             </Button>
           </Box>
           {addrResults.length > 0 && (
-            <Paper elevation={3} sx={{ mt: 0.5, borderRadius: 1.5, overflow: 'hidden', border: '1px solid #D1FAE5' }}>
-              <List dense disablePadding>
-                {addrResults.map((item, i) => (
-                  <ListItem key={item.place_id} disablePadding divider={i < addrResults.length - 1}>
-                    <Box component="button" onClick={() => handleAddrSelect(item)}
-                      sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1, border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', '&:hover': { background: '#F0FDF4' } }}>
-                      <LocationOnIcon sx={{ fontSize: 16, color: '#16A34A', flexShrink: 0 }} />
-                      <Box>
-                        <Typography variant="body2" fontWeight={600} noWrap>{item.display_name.split(',').slice(0, 2).join(' ')}</Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>{item.display_name.split(',').slice(2, 5).join(', ')}</Typography>
-                      </Box>
-                    </Box>
-                  </ListItem>
-                ))}
-              </List>
+            <Paper elevation={3} sx={{ mt: 0.5, borderRadius: 2, overflow: 'hidden', maxHeight: 240, overflowY: 'auto' }}>
+              {addrResults.map((item, i) => (
+                <Box key={item.place_id} onClick={() => handleAddrSelect(item)} sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.2,
+                  cursor: 'pointer', borderBottom: i < addrResults.length - 1 ? '1px solid #F1F3F4' : 'none',
+                  '&:hover': { background: '#F8F9FA' },
+                }}>
+                  <LocationOnIcon sx={{ fontSize: 18, color: '#EA4335', flexShrink: 0 }} />
+                  <Box sx={{ overflow: 'hidden' }}>
+                    <Typography variant="body2" fontWeight={500} noWrap>{item.display_name.split(',').slice(0, 2).join(' ')}</Typography>
+                    <Typography variant="caption" noWrap>{item.display_name.split(',').slice(2, 5).join(', ')}</Typography>
+                  </Box>
+                </Box>
+              ))}
             </Paper>
           )}
         </Box>
 
         {/* 안내 */}
-        <Box sx={{
+        <Paper elevation={3} sx={{
           position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 5, background: 'rgba(255,255,255,0.95)', borderRadius: 2,
-          px: 2.5, py: 1, boxShadow: '0 2px 12px rgba(0,0,0,0.1)', border: '1px solid #D1FAE5',
+          zIndex: 5, borderRadius: 24, px: 3, py: 1.2,
           display: 'flex', alignItems: 'center', gap: 1.5, pointerEvents: 'none',
         }}>
-          <StraightenIcon sx={{ color: '#E84040', fontSize: 18 }} />
-          <Typography variant="body2" fontWeight={600} color="text.primary">
+          <StraightenIcon sx={{ color: '#1A73E8', fontSize: 16 }} />
+          <Typography variant="body2" fontWeight={500}>
             지도를 클릭해 측정 지점 추가 · 여러 지점을 이어 경로 거리 측정
           </Typography>
-        </Box>
+        </Paper>
       </Box>
 
-      {/* 오른쪽 패널 */}
+      {/* 오른쪽 패널 — 구글 사이드바 */}
       <Box sx={{
-        width: 260, flexShrink: 0, p: 2,
-        background: '#FFFFFF', borderLeft: '2px solid #D1FAE5',
-        overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5,
+        width: 280, flexShrink: 0,
+        background: '#FFFFFF', boxShadow: '-2px 0 8px rgba(60,64,67,0.2)',
+        overflowY: 'auto', display: 'flex', flexDirection: 'column',
+        '&::-webkit-scrollbar': { width: 4 },
+        '&::-webkit-scrollbar-thumb': { background: '#BDC1C6', borderRadius: 2 },
       }}>
-        <Typography variant="subtitle1" fontWeight={800} color="primary">
-          📏 거리 측정
-        </Typography>
+        <Box sx={{ px: 2, pt: 2, pb: 1, borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <StraightenIcon sx={{ fontSize: 18, color: '#1A73E8' }} />
+          <Typography variant="subtitle2" fontWeight={600}>거리 측정</Typography>
+        </Box>
 
         {/* 총 거리 */}
-        <Box sx={{
-          p: 2, borderRadius: 2, textAlign: 'center',
-          background: points.length ? 'linear-gradient(135deg, #DCFCE7, #F0FDF4)' : '#F9FAFB',
-          border: `2px solid ${points.length ? '#86EFAC' : '#E5E7EB'}`,
-        }}>
+        <Box sx={{ p: 2, borderBottom: '1px solid #E8EAED' }}>
           <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>총 거리</Typography>
-          <Typography variant="h4" fontWeight={900} color={points.length ? 'primary' : 'text.disabled'} lineHeight={1}>
-            {points.length ? fmtDist(previewTotal) : '—'}
-          </Typography>
-          {points.length >= 2 && (
-            <Typography variant="caption" color="text.secondary">{points.length}개 지점 · {points.length - 1}구간</Typography>
-          )}
+          <Box sx={{
+            p: 2, borderRadius: 2, textAlign: 'center',
+            background: points.length ? '#E8F0FE' : '#F8F9FA',
+          }}>
+            <Typography variant="h4" fontWeight={700} color={points.length ? 'primary' : 'text.disabled'} lineHeight={1}>
+              {points.length ? fmtDist(previewTotal) : '—'}
+            </Typography>
+            {points.length >= 2 && (
+              <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+                {points.length}개 지점 · {points.length - 1}구간
+              </Typography>
+            )}
+          </Box>
         </Box>
 
         {/* 구간 목록 */}
         {points.length >= 2 && (
-          <Box>
-            <Typography variant="caption" fontWeight={700} color="text.secondary" display="block" mb={0.5}>구간별 거리</Typography>
+          <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #E8EAED' }}>
+            <Typography variant="caption" fontWeight={600} color="text.secondary" display="block" mb={1}>구간별 거리</Typography>
             {points.slice(1).map((p, i) => {
               const seg = haversineM(points[i][0], points[i][1], p[0], p[1]);
               return (
-                <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.6, borderBottom: '1px solid #F0FDF4' }}>
-                  <Typography variant="caption" color="text.secondary">
-                    <Box component="span" sx={{ display: 'inline-block', width: 18, height: 18, borderRadius: '50%', background: '#E84040', color: 'white', fontSize: 9, fontWeight: 800, textAlign: 'center', lineHeight: '18px', mr: 0.5 }}>{i + 1}</Box>
-                    → {i + 2}번 지점
-                  </Typography>
-                  <Typography variant="caption" fontWeight={700} color="#E84040">{fmtDist(seg)}</Typography>
+                <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.8, borderBottom: '1px solid #F1F3F4' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ width: 20, height: 20, borderRadius: '50%', background: '#1A73E8', color: 'white', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</Box>
+                    <Typography variant="caption" color="text.secondary">→ {i + 2}번</Typography>
+                  </Box>
+                  <Typography variant="caption" fontWeight={700} color="primary">{fmtDist(seg)}</Typography>
                 </Box>
               );
             })}
           </Box>
         )}
 
-        <Box sx={{ display: 'flex', gap: 1, mt: 'auto' }}>
-          <Button fullWidth variant="outlined" color="warning" size="small"
-            startIcon={<UndoIcon />} onClick={handleUndo} disabled={!points.length}>
+        <Box sx={{ p: 2, display: 'flex', gap: 1 }}>
+          <Button fullWidth variant="outlined" size="small"
+            startIcon={<UndoIcon />} onClick={handleUndo} disabled={!points.length}
+            sx={{ borderRadius: 20 }}>
             되돌리기
           </Button>
           <Button fullWidth variant="outlined" color="error" size="small"
-            startIcon={<DeleteIcon />} onClick={handleClear} disabled={!points.length}>
+            startIcon={<DeleteIcon />} onClick={handleClear} disabled={!points.length}
+            sx={{ borderRadius: 20 }}>
             초기화
           </Button>
         </Box>
 
-        <Box sx={{ p: 1.2, borderRadius: 1.5, background: '#F0FDF4', border: '1px solid #D1FAE5' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, lineHeight: 1.6 }}>
-            💡 클릭으로 지점 추가<br />
-            🖱️ 마우스 이동 시 다음 구간 미리보기<br />
-            ↩️ 되돌리기로 마지막 지점 제거
+        <Box sx={{ mx: 2, mb: 2, p: 1.5, borderRadius: 2, background: '#F8F9FA', mt: 'auto' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11, lineHeight: 1.7 }}>
+            클릭으로 지점 추가<br />
+            마우스 이동 시 다음 구간 미리보기<br />
+            되돌리기로 마지막 지점 제거
           </Typography>
         </Box>
       </Box>
