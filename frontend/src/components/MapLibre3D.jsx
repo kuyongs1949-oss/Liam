@@ -243,25 +243,13 @@ export default function MapLibre3D({
     };
 
     const onDown = (e) => {
-      if (e.button !== 0) return;        // 좌클릭만
+      if (e.button !== 0) return;
       e.preventDefault();
       startPx = { x: e.clientX, y: e.clientY };
     };
 
-    // 캔버스 크기를 실제 픽셀 해상도에 맞게 초기화
-    const initCanvas = () => {
-      const canvas = drawCanvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const dpr  = window.devicePixelRatio || 1;
-      canvas.width  = rect.width  * dpr;
-      canvas.height = rect.height * dpr;
-      const ctx = canvas.getContext('2d');
-      ctx.scale(dpr, dpr);
-    };
-    initCanvas();
-
-    // 두 점 사이 거리(m) 계산
+    // canvas.width 재설정 = 캔버스 초기화 + 올바른 해상도 설정
+    // (initCanvas를 별도로 미리 호출하면 크기가 0일 수 있으므로 매 프레임 설정)
     const haversineM = (lng1, lat1, lng2, lat2) => {
       const R = 6371000;
       const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -270,89 +258,71 @@ export default function MapLibre3D({
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     };
 
-    // 캔버스에 미리보기 선 그리기
     const drawPreview = (sx, sy, ex, ey) => {
       const canvas = drawCanvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const dpr  = window.devicePixelRatio || 1;
-      const ctx  = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+      if (!rect.width || !rect.height) return;
+
+      // 매 프레임 canvas 크기 재설정 → 자동으로 clear + transform 리셋
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width  = rect.width  * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
 
       const x1 = sx - rect.left, y1 = sy - rect.top;
       const x2 = ex - rect.left, y2 = ey - rect.top;
 
-      // ── 선 ──────────────────────────────────
-      // 외곽 흰 테두리 (가시성 확보)
+      // 흰 테두리 (어떤 배경에서도 선 보이게)
       ctx.beginPath();
       ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = 6;
-      ctx.lineCap = 'round';
-      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.setLineDash([]);
       ctx.stroke();
 
-      // 주 색상 실선
+      // 주 색상 실선 (파란색 — 방음벽)
       ctx.beginPath();
       ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      ctx.strokeStyle = '#E84040';
-      ctx.lineWidth = 3;
-      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#0068C3';
+      ctx.lineWidth = 3.5; ctx.lineCap = 'round';
       ctx.stroke();
 
-      // ── 시작점 원 ────────────────────────────
+      // 시작점
       ctx.beginPath();
       ctx.arc(x1, y1, 7, 0, Math.PI * 2);
-      ctx.fillStyle = 'white';
-      ctx.fill();
-      ctx.strokeStyle = '#E84040';
-      ctx.lineWidth = 3;
-      ctx.stroke();
+      ctx.fillStyle = 'white'; ctx.fill();
+      ctx.strokeStyle = '#0068C3'; ctx.lineWidth = 3; ctx.stroke();
 
-      // ── 끝점 원 ─────────────────────────────
+      // 끝점
       ctx.beginPath();
       ctx.arc(x2, y2, 7, 0, Math.PI * 2);
-      ctx.fillStyle = '#E84040';
-      ctx.fill();
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
+      ctx.fillStyle = '#0068C3'; ctx.fill();
+      ctx.strokeStyle = 'white'; ctx.lineWidth = 2.5; ctx.stroke();
 
-      // ── 거리 라벨 ────────────────────────────
+      // 거리 라벨
       const s = unproject(sx, sy);
       const d = unproject(ex, ey);
       if (s && d) {
         const dist = haversineM(s[0], s[1], d[0], d[1]);
-        const label = dist >= 1000
-          ? `${(dist/1000).toFixed(2)} km`
-          : `${Math.round(dist)} m`;
-
-        const mx = (x1 + x2) / 2;
-        const my = (y1 + y2) / 2 - 18;
-
-        ctx.font = 'bold 13px "Noto Sans KR", Arial, sans-serif';
+        const label = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 - 18;
+        ctx.font = 'bold 12px Arial, sans-serif';
         const tw = ctx.measureText(label).width;
-
-        // 라벨 배경
-        ctx.fillStyle = 'rgba(40,40,40,0.82)';
-        ctx.beginPath();
-        ctx.roundRect(mx - tw/2 - 8, my - 14, tw + 16, 22, 5);
-        ctx.fill();
-
-        // 라벨 텍스트
+        // 배경 (roundRect 대신 fillRect 사용 — 모든 브라우저 호환)
+        ctx.fillStyle = 'rgba(0,40,100,0.85)';
+        ctx.fillRect(mx - tw/2 - 8, my - 14, tw + 16, 20);
         ctx.fillStyle = 'white';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, mx, my - 3);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(label, mx, my - 4);
       }
     };
 
     const clearPreview = () => {
       const canvas = drawCanvasRef.current;
       if (!canvas) return;
-      const dpr = window.devicePixelRatio || 1;
-      const ctx  = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+      // width 재설정으로 캔버스 완전 초기화
+      canvas.width = canvas.width;
     };
 
     const onMove = (e) => {
