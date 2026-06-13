@@ -5,6 +5,24 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 const STYLE = 'https://tiles.openfreemap.org/styles/bright';
 const EMPTY = { type: 'FeatureCollection', features: [] };
 
+// 이동 대시 애니메이션 시퀀스 (MapLibre 공식 기법)
+const DASH_SEQ = [
+  [0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5],
+  [2, 4, 1], [2.5, 4, 0.5], [3, 4, 0],
+  [0, 0.5, 3.5, 3], [0, 1, 3, 3], [0, 1.5, 2.5, 3],
+  [0, 2, 2, 3], [0, 2.5, 1.5, 3], [0, 3, 1, 3], [0, 3.5, 0.5, 3],
+];
+
+function getPolyCentroid(feature) {
+  try {
+    const ring = feature.geometry.coordinates[0];
+    const n = ring.length - 1;
+    let x = 0, y = 0;
+    for (let i = 0; i < n; i++) { x += ring[i][0]; y += ring[i][1]; }
+    return [x / n, y / n];
+  } catch { return null; }
+}
+
 export default function MapLibre3D({
   sourceLocation,
   barrierCoords,
@@ -16,44 +34,40 @@ export default function MapLibre3D({
   onBarrierComplete,
   onBuildingSelect,
 }) {
-  const containerRef   = useRef(null);   // 지도 div
-  const overlayRef     = useRef(null);   // 방음벽 드로잉 오버레이 div
+  const containerRef   = useRef(null);
+  const overlayRef     = useRef(null);
   const mapRef         = useRef(null);
   const loadedRef      = useRef(false);
   const pendingRef     = useRef({});
   const animRef        = useRef(null);
-  const pulseRef       = useRef({ t: 0 });
-  const startPxRef     = useRef(null);   // 드래그 시작 픽셀 좌표
+  const pulseRef       = useRef({ t: 0, lastTs: null });
+  const startPxRef     = useRef(null);
 
-  // 항상 최신 값 refs
   const drawModeRef          = useRef(drawMode);
   const onBarrierCompleteRef = useRef(onBarrierComplete);
   const onSourceSetRef       = useRef(onSourceSet);
   const onBuildingSelectRef  = useRef(onBuildingSelect);
 
-  useEffect(() => { drawModeRef.current = drawMode; },                         [drawMode]);
-  useEffect(() => { onBarrierCompleteRef.current = onBarrierComplete; },       [onBarrierComplete]);
-  useEffect(() => { onSourceSetRef.current = onSourceSet; },                   [onSourceSet]);
-  useEffect(() => { onBuildingSelectRef.current = onBuildingSelect; },         [onBuildingSelect]);
+  useEffect(() => { drawModeRef.current = drawMode; },                   [drawMode]);
+  useEffect(() => { onBarrierCompleteRef.current = onBarrierComplete; }, [onBarrierComplete]);
+  useEffect(() => { onSourceSetRef.current = onSourceSet; },             [onSourceSet]);
+  useEffect(() => { onBuildingSelectRef.current = onBuildingSelect; },   [onBuildingSelect]);
 
-  /* setSource 헬퍼 */
   const setSource = useCallback((id, data) => {
     if (!loadedRef.current) { pendingRef.current[id] = data; return; }
     mapRef.current?.getSource(id)?.setData(data);
   }, []);
 
-  /* ══════════════════════════════════════════
-   * 방음벽 오버레이 이벤트 (지도와 완전 분리)
-   * ══════════════════════════════════════════ */
+  /* ── 오버레이 이벤트 (방음벽 드로잉) ── */
   useEffect(() => {
     const overlay = overlayRef.current;
     if (!overlay) return;
 
-    const unproject = (clientX, clientY) => {
+    const unproject = (cx, cy) => {
       const map = mapRef.current;
       if (!map) return null;
       const rect = overlay.getBoundingClientRect();
-      const ll   = map.unproject([clientX - rect.left, clientY - rect.top]);
+      const ll   = map.unproject([cx - rect.left, cy - rect.top]);
       return [ll.lng, ll.lat];
     };
 
@@ -62,75 +76,56 @@ export default function MapLibre3D({
       e.preventDefault();
       startPxRef.current = { x: e.clientX, y: e.clientY };
     };
-
     const onMove = (e) => {
-      if (!startPxRef.current) return;
-      const map  = mapRef.current;
-      if (!map || !loadedRef.current) return;
-      const start = unproject(startPxRef.current.x, startPxRef.current.y);
-      const end   = unproject(e.clientX, e.clientY);
-      if (!start || !end) return;
-      map.getSource('barrier-preview')?.setData({
+      if (!startPxRef.current || !mapRef.current || !loadedRef.current) return;
+      const s = unproject(startPxRef.current.x, startPxRef.current.y);
+      const d = unproject(e.clientX, e.clientY);
+      if (!s || !d) return;
+      mapRef.current.getSource('barrier-preview')?.setData({
         type: 'FeatureCollection',
-        features: [{ type: 'Feature',
-          geometry: { type: 'LineString', coordinates: [start, end] },
-          properties: {} }],
+        features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [s, d] }, properties: {} }],
       });
     };
-
-    // mouseup은 document에 (오버레이 밖에서 손 떼도 감지)
     const onUp = (e) => {
       if (!startPxRef.current) return;
       const sp = startPxRef.current;
       startPxRef.current = null;
-
-      const map = mapRef.current;
-      if (map && loadedRef.current) map.getSource('barrier-preview')?.setData(EMPTY);
-
-      const start = unproject(sp.x, sp.y);
-      const end   = unproject(e.clientX, e.clientY);
-      if (!start || !end) return;
-
-      const dist = Math.hypot(start[0] - end[0], start[1] - end[1]);
-      if (dist > 0.000001) {
-        onBarrierCompleteRef.current?.([start, end]);
-      }
+      if (mapRef.current && loadedRef.current) mapRef.current.getSource('barrier-preview')?.setData(EMPTY);
+      const s = unproject(sp.x, sp.y);
+      const d = unproject(e.clientX, e.clientY);
+      if (!s || !d) return;
+      if (Math.hypot(s[0] - d[0], s[1] - d[1]) > 0.000001) onBarrierCompleteRef.current?.([s, d]);
     };
 
     overlay.addEventListener('mousedown', onDown);
     overlay.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup',  onUp);
-
+    document.addEventListener('mouseup', onUp);
     return () => {
       overlay.removeEventListener('mousedown', onDown);
       overlay.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup',  onUp);
+      document.removeEventListener('mouseup', onUp);
     };
-  }, []); // 1회만 등록
+  }, []);
 
-  /* ── 오버레이 활성/비활성 + dragPan 토글 ── */
+  /* ── dragPan 토글 ── */
   useEffect(() => {
-    const overlay = overlayRef.current;
-    if (overlay) {
-      overlay.style.pointerEvents = drawMode === 'barrier' ? 'all' : 'none';
-      overlay.style.cursor        = drawMode === 'barrier' ? 'crosshair' : 'default';
+    const ov = overlayRef.current;
+    if (ov) {
+      ov.style.pointerEvents = drawMode === 'barrier' ? 'all' : 'none';
+      ov.style.cursor = drawMode === 'barrier' ? 'crosshair' : 'default';
     }
     const map = mapRef.current;
     if (!map) return;
     if (drawMode === 'barrier') {
-      map.dragPan.disable();
-      map.dragRotate.disable();
+      map.dragPan.disable(); map.dragRotate.disable();
     } else {
-      map.dragPan.enable();
-      map.dragRotate.enable();
+      map.dragPan.enable(); map.dragRotate.enable();
       startPxRef.current = null;
       if (loadedRef.current) map.getSource('barrier-preview')?.setData(EMPTY);
     }
   }, [drawMode]);
 
-  /* ══════════════════════════════════════════
-   * 지도 초기화 (1회)
-   * ══════════════════════════════════════════ */
+  /* ── 지도 초기화 ── */
   useEffect(() => {
     if (mapRef.current) return;
 
@@ -138,34 +133,38 @@ export default function MapLibre3D({
       container: containerRef.current,
       style: STYLE,
       center: [126.978, 37.5665],
-      zoom: 15,
-      pitch: 50,
-      antialias: true,
+      zoom: 15, pitch: 50, antialias: true,
     });
     mapRef.current = map;
-
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 
     map.on('load', () => {
-      /* 건물 - 단일 레이어 + case 식 */
+
+      /* 소음 전파 경로 (source→building 방향선) */
+      map.addSource('noise-rays', { type: 'geojson', data: EMPTY });
+      // 글로우
+      map.addLayer({ id: 'noise-rays-glow', type: 'line', source: 'noise-rays',
+        paint: { 'line-color': ['get', 'color'], 'line-width': 8,
+          'line-opacity': 0.12, 'line-blur': 3 } });
+      // 이동 대시
+      map.addLayer({ id: 'noise-rays-line', type: 'line', source: 'noise-rays',
+        paint: { 'line-color': ['get', 'color'], 'line-width': 2.5,
+          'line-dasharray': DASH_SEQ[0], 'line-opacity': 0.85 } });
+
+      /* 건물 */
       map.addSource('noise-buildings', { type: 'geojson', data: EMPTY });
       map.addLayer({
-        id: 'noise-buildings-3d',
-        type: 'fill-extrusion',
-        source: 'noise-buildings',
+        id: 'noise-buildings-3d', type: 'fill-extrusion', source: 'noise-buildings',
         paint: {
           'fill-extrusion-color': ['case',
             ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1],
-            ['coalesce', ['get', 'color'], '#FF9800'],
-            '#B0BEC5',
-          ],
+            ['coalesce', ['get', 'color'], '#FF9800'], '#B0BEC5'],
           'fill-extrusion-height': ['case',
             ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1],
             ['+', ['coalesce', ['get', 'height'], 9],
               ['*', ['max', ['-', ['coalesce', ['get', 'max_noise_db'], 0], 65], 0], 2]],
-            ['coalesce', ['get', 'height'], 9],
-          ],
+            ['coalesce', ['get', 'height'], 9]],
           'fill-extrusion-base': 0,
           'fill-extrusion-opacity': ['case',
             ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1], 0.92, 0.3],
@@ -176,14 +175,11 @@ export default function MapLibre3D({
         filter: ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1],
         layout: {
           'text-field': ['concat', ['to-string', ['round', ['get', 'max_noise_db']]], 'dB'],
-          'text-size': 13,
-          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-size': 13, 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
           'text-anchor': 'center', 'text-allow-overlap': false, 'text-offset': [0, -1],
         },
-        paint: {
-          'text-color': ['coalesce', ['get', 'color'], '#E65100'],
-          'text-halo-color': 'rgba(255,255,255,0.98)', 'text-halo-width': 2.5,
-        },
+        paint: { 'text-color': ['coalesce', ['get', 'color'], '#E65100'],
+          'text-halo-color': 'rgba(255,255,255,0.98)', 'text-halo-width': 2.5 },
       });
 
       /* 방음벽 */
@@ -193,26 +189,18 @@ export default function MapLibre3D({
       map.addLayer({ id: 'barriers-line', type: 'line', source: 'barriers',
         paint: { 'line-color': '#FF5722', 'line-width': 5, 'line-cap': 'round', 'line-join': 'round' } });
 
-      /* 방음벽 미리보기 */
       map.addSource('barrier-preview', { type: 'geojson', data: EMPTY });
       map.addLayer({ id: 'barrier-preview-line', type: 'line', source: 'barrier-preview',
         paint: { 'line-color': '#FF9800', 'line-width': 4, 'line-dasharray': [4, 2], 'line-opacity': 0.95 } });
 
-      /* 소음원 파장 */
-      map.addSource('pulse-ring', { type: 'geojson', data: EMPTY });
-      for (let i = 0; i < 3; i++) {
-        map.addLayer({ id: `pulse-ring-${i}`, type: 'circle', source: 'pulse-ring',
-          paint: { 'circle-radius': 10, 'circle-color': 'transparent',
-            'circle-stroke-width': 3, 'circle-stroke-color': '#FF5722', 'circle-stroke-opacity': 0 } });
-      }
-
       /* 소음원 마커 */
       map.addSource('source-loc', { type: 'geojson', data: EMPTY });
       map.addLayer({ id: 'source-halo', type: 'circle', source: 'source-loc',
-        paint: { 'circle-radius': 20, 'circle-color': '#FF5722', 'circle-opacity': 0.15,
-          'circle-stroke-color': '#FF5722', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.4 } });
+        paint: { 'circle-radius': 20, 'circle-color': '#FF5722', 'circle-opacity': 0.18,
+          'circle-stroke-color': '#FF5722', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.5 } });
       map.addLayer({ id: 'source-circle', type: 'circle', source: 'source-loc',
-        paint: { 'circle-radius': 12, 'circle-color': '#FF5722', 'circle-stroke-color': 'white', 'circle-stroke-width': 3 } });
+        paint: { 'circle-radius': 12, 'circle-color': '#FF5722',
+          'circle-stroke-color': 'white', 'circle-stroke-width': 3 } });
       map.addLayer({ id: 'source-label', type: 'symbol', source: 'source-loc',
         layout: { 'text-field': '🔊', 'text-size': 16, 'text-anchor': 'center', 'text-allow-overlap': true } });
 
@@ -223,7 +211,7 @@ export default function MapLibre3D({
       map.addLayer({ id: 'radius-line', type: 'line', source: 'radius-ring',
         paint: { 'line-color': '#FF5722', 'line-width': 1.5, 'line-dasharray': [4, 3], 'line-opacity': 0.5 } });
 
-      /* 건물 클릭 */
+      /* 건물 클릭/커서 */
       map.on('click', 'noise-buildings-3d', (e) => {
         if (e.features?.length) onBuildingSelectRef.current?.(e.features[0].properties);
       });
@@ -243,54 +231,80 @@ export default function MapLibre3D({
       });
 
       loadedRef.current = true;
-      for (const [id, data] of Object.entries(pendingRef.current)) {
-        map.getSource(id)?.setData(data);
-      }
+      for (const [id, data] of Object.entries(pendingRef.current)) map.getSource(id)?.setData(data);
       pendingRef.current = {};
     });
 
     return () => {
       cancelAnimationFrame(animRef.current);
       map.remove();
-      mapRef.current    = null;
+      mapRef.current = null;
       loadedRef.current = false;
     };
   }, []);
 
-  /* ── 소음원 위치 + 파장 ── */
+  /* ── 소음원 위치 + 소음원 마커 ── */
   useEffect(() => {
-    cancelAnimationFrame(animRef.current);
     if (!sourceLocation) {
       setSource('source-loc', EMPTY);
       setSource('radius-ring', EMPTY);
-      setSource('pulse-ring', EMPTY);
       return;
     }
     const { lng, lat, radius = 300 } = sourceLocation;
     setSource('source-loc', { type: 'FeatureCollection',
       features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }] });
     setSource('radius-ring', makeCircle(lng, lat, radius));
-    setSource('pulse-ring',  { type: 'FeatureCollection',
-      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }] });
     mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, pitch: 50, duration: 600 });
+  }, [sourceLocation, setSource]);
 
-    const PERIOD = 2000, OFFSETS = [0, 667, 1333];
-    let lastTs = null;
+  /* ── 소음 전파 경로 + 이동 대시 애니메이션 ── */
+  useEffect(() => {
+    cancelAnimationFrame(animRef.current);
+
+    if (!sourceLocation || !buildingGeoJSON?.features?.length) {
+      setSource('noise-rays', EMPTY);
+      return;
+    }
+
+    const { lng, lat } = sourceLocation;
+
+    // 65dB 초과 건물까지 경로선 생성
+    const rays = buildingGeoJSON.features
+      .filter(f => f.properties?.exceeds_65db === 1)
+      .map(f => {
+        const c = getPolyCentroid(f);
+        if (!c) return null;
+        return {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [[lng, lat], c] },
+          properties: { color: f.properties.color || '#FF9800' },
+        };
+      })
+      .filter(Boolean);
+
+    setSource('noise-rays', { type: 'FeatureCollection', features: rays });
+
+    if (!rays.length) return;
+
+    // 이동 대시 애니메이션
+    let step = 0;
+    let lastUpdate = 0;
+    const INTERVAL = 60; // ms per frame
+
     const animate = (ts) => {
       if (!loadedRef.current || !mapRef.current) return;
-      if (!lastTs) lastTs = ts;
-      pulseRef.current.t += ts - lastTs;
-      lastTs = ts;
-      OFFSETS.forEach((off, i) => {
-        const phase = ((pulseRef.current.t + off) % PERIOD) / PERIOD;
-        mapRef.current?.setPaintProperty(`pulse-ring-${i}`, 'circle-radius', 10 + phase * 80);
-        mapRef.current?.setPaintProperty(`pulse-ring-${i}`, 'circle-stroke-opacity', (1 - phase) * 0.8);
-      });
+      if (ts - lastUpdate > INTERVAL) {
+        step = (step + 1) % DASH_SEQ.length;
+        try {
+          mapRef.current.setPaintProperty('noise-rays-line', 'line-dasharray', DASH_SEQ[step]);
+        } catch (_) {}
+        lastUpdate = ts;
+      }
       animRef.current = requestAnimationFrame(animate);
     };
     animRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animRef.current);
-  }, [sourceLocation, setSource]);
+  }, [sourceLocation, buildingGeoJSON, setSource]);
 
   /* ── 방음벽 렌더링 ── */
   useEffect(() => {
@@ -308,10 +322,8 @@ export default function MapLibre3D({
   /* ── 주소 검색 이동 ── */
   useEffect(() => {
     if (!flyToLocation) return;
-    mapRef.current?.flyTo({
-      center: [flyToLocation.lng, flyToLocation.lat],
-      zoom: flyToLocation.zoom ?? 16, pitch: 50, duration: 800,
-    });
+    mapRef.current?.flyTo({ center: [flyToLocation.lng, flyToLocation.lat],
+      zoom: flyToLocation.zoom ?? 16, pitch: 50, duration: 800 });
   }, [flyToLocation]);
 
   /* ── 건물 GeoJSON ── */
@@ -321,20 +333,13 @@ export default function MapLibre3D({
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      {/* 지도 컨테이너 */}
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {/* 방음벽 드로잉 오버레이 - MapLibre 이벤트와 완전 분리 */}
-      <div
-        ref={overlayRef}
-        style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          pointerEvents: 'none',   // drawMode 변경 시 effect에서 'all'로 바꿈
-          cursor: 'crosshair',
-          zIndex: 2,
-          background: 'transparent',
-          userSelect: 'none',
-        }}
-      />
+      {/* 방음벽 드로잉 오버레이 */}
+      <div ref={overlayRef} style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        pointerEvents: 'none', cursor: 'crosshair', zIndex: 2,
+        background: 'transparent', userSelect: 'none',
+      }} />
     </div>
   );
 }
