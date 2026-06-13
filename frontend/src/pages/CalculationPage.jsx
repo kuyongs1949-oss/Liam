@@ -30,23 +30,38 @@ export default function CalculationPage() {
 
       {/* ── 왼쪽 네비게이션 레일 ── */}
       <Box sx={{
-        width: 72, flexShrink: 0,
+        width: 88, flexShrink: 0,
         background: '#FFFFFF',
         boxShadow: '1px 0 0 #E8EAED',
         display: 'flex', flexDirection: 'column',
         alignItems: 'center',
-        pt: 1, pb: 2,
+        pt: 1.5, pb: 2,
         zIndex: 200,
       }}>
-        {/* 로고 */}
-        <Box sx={{
-          width: 40, height: 40, borderRadius: '50%', mb: 2, mt: 0.5,
-          background: 'linear-gradient(135deg, #4285F4 0%, #0F9D58 50%, #FBBC04 75%, #EA4335 100%)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <GraphicEqIcon sx={{ fontSize: 20, color: 'white' }} />
+        {/* 로고 + 타이틀 */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2.5, gap: 0.8 }}>
+          <Box sx={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #4285F4 0%, #0F9D58 50%, #FBBC04 75%, #EA4335 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <GraphicEqIcon sx={{ fontSize: 22, color: 'white' }} />
+          </Box>
+          <Box sx={{ textAlign: 'center', px: 0.5 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#202124', lineHeight: 1.3, wordBreak: 'keep-all' }}>
+              현대엔지니어링
+            </Typography>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, color: '#1A73E8', lineHeight: 1.3, wordBreak: 'keep-all' }}>
+              소음영향
+            </Typography>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, color: '#1A73E8', lineHeight: 1.3, wordBreak: 'keep-all' }}>
+              모델링
+            </Typography>
+          </Box>
         </Box>
+
+        {/* 구분선 */}
+        <Box sx={{ width: '80%', height: 1, background: '#E8EAED', mb: 1.5 }} />
 
         {/* 탭 버튼들 — 세로 배열 */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%', px: 0.5 }}>
@@ -66,17 +81,13 @@ export default function CalculationPage() {
                     color: active ? '#1A73E8' : '#202124',
                   },
                 }}>
-                  <Box sx={{
-                    fontSize: 0,
-                    '& svg': { fontSize: 22, color: 'inherit', display: 'block' },
-                  }}>
+                  <Box sx={{ fontSize: 0, '& svg': { fontSize: 22, color: 'inherit', display: 'block' } }}>
                     {item.icon}
                   </Box>
                   <Typography sx={{
                     fontSize: 10, fontWeight: active ? 700 : 500,
                     color: 'inherit', lineHeight: 1, textAlign: 'center',
-                    letterSpacing: '-0.2px',
-                    wordBreak: 'keep-all',
+                    letterSpacing: '-0.2px', wordBreak: 'keep-all',
                   }}>
                     {item.label}
                   </Typography>
@@ -84,13 +95,6 @@ export default function CalculationPage() {
               </Tooltip>
             );
           })}
-        </Box>
-
-        {/* 하단 버전 */}
-        <Box sx={{ mt: 'auto' }}>
-          <Typography sx={{ fontSize: 9, color: '#BDC1C6', textAlign: 'center', lineHeight: 1.4 }}>
-            ISO<br />9613-2
-          </Typography>
         </Box>
       </Box>
 
