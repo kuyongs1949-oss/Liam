@@ -7,25 +7,27 @@ const EMPTY = { type: 'FeatureCollection', features: [] };
 
 export default function MapLibre3D({
   sourceLocation,
-  barrierCoords,      // [[lng,lat], [lng,lat], ...]
+  barrierCoords,      // [[[lng,lat],[lng,lat]], ...] 각 선분
   buildingGeoJSON,
-  drawMode,           // null | 'source' | 'barrier'
+  drawMode,           // null | 'barrier'
   barrierHeight = 3,
-  onSourceSet,        // (lngLat) => void
-  onBarrierComplete,  // (coords [[lng,lat],[lng,lat]]) => void
-  onBuildingSelect,   // (props) => void
+  onSourceSet,
+  onBarrierComplete,
+  onBuildingSelect,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const loadedRef = useRef(false);
   const pendingRef = useRef({});
+  const animRef = useRef(null);
+  const pulseRef = useRef({ t: 0 });
 
   const setSource = useCallback((id, data) => {
     if (!loadedRef.current) { pendingRef.current[id] = data; return; }
     mapRef.current?.getSource(id)?.setData(data);
   }, []);
 
-  // 지도 초기화
+  /* ── 지도 초기화 ─────────────────────────────────────── */
   useEffect(() => {
     if (mapRef.current) return;
 
@@ -42,7 +44,7 @@ export default function MapLibre3D({
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 
     map.on('load', () => {
-      // 건물 소음 레이어
+      // ── 건물 fill-extrusion ──
       map.addSource('noise-buildings', { type: 'geojson', data: EMPTY });
       map.addLayer({
         id: 'noise-buildings-fill',
@@ -50,48 +52,139 @@ export default function MapLibre3D({
         source: 'noise-buildings',
         paint: {
           'fill-extrusion-color': ['coalesce', ['get', 'color'], '#90A4AE'],
-          'fill-extrusion-height': ['coalesce', ['get', 'height'], 12],
+          'fill-extrusion-height': ['coalesce', ['get', 'height'], 9],
           'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.85,
+          'fill-extrusion-opacity': 0.88,
         },
       });
 
-      // 방음벽 (확정)
+      // ── 건물 상단 소음 레이블 ──
+      map.addLayer({
+        id: 'noise-label',
+        type: 'symbol',
+        source: 'noise-buildings',
+        layout: {
+          'text-field': ['case',
+            ['!=', ['get', 'max_noise_db'], null],
+            ['concat', ['to-string', ['get', 'max_noise_db']], 'dB'],
+            '',
+          ],
+          'text-size': 11,
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-anchor': 'center',
+          'text-offset': [0, 0],
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': ['coalesce', ['get', 'color'], '#37474F'],
+          'text-halo-color': 'rgba(255,255,255,0.9)',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      // ── 방음벽 ──
       map.addSource('barriers', { type: 'geojson', data: EMPTY });
+      map.addLayer({
+        id: 'barriers-casing',
+        type: 'line',
+        source: 'barriers',
+        paint: { 'line-color': '#BF360C', 'line-width': 9, 'line-cap': 'round', 'line-join': 'round', 'line-opacity': 0.35 },
+      });
       map.addLayer({
         id: 'barriers-line',
         type: 'line',
         source: 'barriers',
         paint: { 'line-color': '#FF5722', 'line-width': 5, 'line-cap': 'round', 'line-join': 'round' },
       });
+      // 방음벽 끝점 점
+      map.addLayer({
+        id: 'barriers-endpoints',
+        type: 'circle',
+        source: 'barriers',
+        filter: ['==', '$type', 'Point'],
+        paint: { 'circle-radius': 5, 'circle-color': '#FF5722', 'circle-stroke-width': 2, 'circle-stroke-color': 'white' },
+      });
 
-      // 방음벽 그리기 미리보기
+      // ── 방음벽 그리기 미리보기 ──
       map.addSource('barrier-preview', { type: 'geojson', data: EMPTY });
       map.addLayer({
         id: 'barrier-preview-line',
         type: 'line',
         source: 'barrier-preview',
-        paint: { 'line-color': '#FF5722', 'line-width': 3, 'line-dasharray': [3, 2], 'line-opacity': 0.7 },
+        paint: { 'line-color': '#FF5722', 'line-width': 3, 'line-dasharray': [4, 2], 'line-opacity': 0.8 },
       });
 
-      // 소음원 마커
+      // ── 소음원 파장 애니메이션 (3개 원) ──
+      map.addSource('pulse-ring', { type: 'geojson', data: EMPTY });
+      for (let i = 0; i < 3; i++) {
+        map.addLayer({
+          id: `pulse-ring-${i}`,
+          type: 'circle',
+          source: 'pulse-ring',
+          paint: {
+            'circle-radius': 10,
+            'circle-color': 'transparent',
+            'circle-stroke-width': 3,
+            'circle-stroke-color': '#FF5722',
+            'circle-stroke-opacity': 0,
+            'circle-opacity': 0,
+          },
+        });
+      }
+
+      // ── 소음원 마커 (중심 점) ──
       map.addSource('source-loc', { type: 'geojson', data: EMPTY });
+      map.addLayer({
+        id: 'source-halo',
+        type: 'circle',
+        source: 'source-loc',
+        paint: {
+          'circle-radius': 20,
+          'circle-color': '#FF5722',
+          'circle-opacity': 0.15,
+          'circle-stroke-color': '#FF5722',
+          'circle-stroke-width': 2,
+          'circle-stroke-opacity': 0.4,
+        },
+      });
       map.addLayer({
         id: 'source-circle',
         type: 'circle',
         source: 'source-loc',
         paint: {
-          'circle-radius': 14,
+          'circle-radius': 12,
           'circle-color': '#FF5722',
           'circle-stroke-color': 'white',
           'circle-stroke-width': 3,
         },
       });
+      // 소음원 아이콘 레이블
+      map.addLayer({
+        id: 'source-label',
+        type: 'symbol',
+        source: 'source-loc',
+        layout: {
+          'text-field': '🔊',
+          'text-size': 16,
+          'text-anchor': 'center',
+          'text-allow-overlap': true,
+        },
+      });
 
-      // 반경 원
+      // ── 반경 원 ──
       map.addSource('radius-ring', { type: 'geojson', data: EMPTY });
-      map.addLayer({ id: 'radius-fill', type: 'fill', source: 'radius-ring', paint: { 'fill-color': '#FF5722', 'fill-opacity': 0.05 } });
-      map.addLayer({ id: 'radius-line', type: 'line', source: 'radius-ring', paint: { 'line-color': '#FF5722', 'line-width': 1.5, 'line-dasharray': [4, 3] } });
+      map.addLayer({
+        id: 'radius-fill',
+        type: 'fill',
+        source: 'radius-ring',
+        paint: { 'fill-color': '#FF5722', 'fill-opacity': 0.04 },
+      });
+      map.addLayer({
+        id: 'radius-line',
+        type: 'line',
+        source: 'radius-ring',
+        paint: { 'line-color': '#FF5722', 'line-width': 1.5, 'line-dasharray': [4, 3], 'line-opacity': 0.5 },
+      });
 
       loadedRef.current = true;
       for (const [id, data] of Object.entries(pendingRef.current)) {
@@ -108,15 +201,20 @@ export default function MapLibre3D({
     map.on('mouseleave', 'noise-buildings-fill', () => { map.getCanvas().style.cursor = ''; });
 
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; loadedRef.current = false; };
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      map.remove();
+      mapRef.current = null;
+      loadedRef.current = false;
+    };
   }, []);
 
-  // ── 소음원 클릭 (source 모드 또는 기본) ──
+  /* ── 소음원 클릭 핸들러 ─────────────────────────────── */
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const handler = (e) => {
-      if (drawMode === 'source' || drawMode === null) {
+      if (drawMode === null || drawMode === 'source') {
         onSourceSet?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
       }
     };
@@ -124,7 +222,7 @@ export default function MapLibre3D({
     return () => map.off('click', handler);
   }, [drawMode, onSourceSet]);
 
-  // ── 방음벽 드래그 그리기 ──
+  /* ── 방음벽 드래그 그리기 ─────────────────────────────── */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || drawMode !== 'barrier') return;
@@ -135,23 +233,26 @@ export default function MapLibre3D({
       startCoord = [e.lngLat.lng, e.lngLat.lat];
       map.dragPan.disable();
     };
-
     const onMove = (e) => {
       if (!startCoord) return;
       const end = [e.lngLat.lng, e.lngLat.lat];
       map.getSource('barrier-preview')?.setData({
         type: 'FeatureCollection',
-        features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [startCoord, end] }, properties: {} }],
+        features: [{
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [startCoord, end] },
+          properties: {},
+        }],
       });
     };
-
     const onUp = (e) => {
       if (!startCoord) return;
       const end = [e.lngLat.lng, e.lngLat.lat];
       map.dragPan.enable();
       map.getSource('barrier-preview')?.setData(EMPTY);
-      const dist = Math.hypot(startCoord[0] - end[0], startCoord[1] - end[1]);
-      if (dist > 0.00001) onBarrierComplete?.([startCoord, end]);
+      if (Math.hypot(startCoord[0] - end[0], startCoord[1] - end[1]) > 0.00001) {
+        onBarrierComplete?.([startCoord, end]);
+      }
       startCoord = null;
     };
 
@@ -168,38 +269,83 @@ export default function MapLibre3D({
     };
   }, [drawMode, onBarrierComplete]);
 
-  // 커서
+  /* ── 커서 ──────────────────────────────────────────── */
   useEffect(() => {
     if (mapRef.current) {
       mapRef.current.getCanvas().style.cursor = drawMode === 'barrier' ? 'crosshair' : 'grab';
     }
   }, [drawMode]);
 
-  // 소음원 위치 반영
+  /* ── 소음원 위치 + 파장 애니메이션 ──────────────────── */
   useEffect(() => {
-    if (!sourceLocation) return;
+    cancelAnimationFrame(animRef.current);
+
+    if (!sourceLocation) {
+      setSource('source-loc', EMPTY);
+      setSource('radius-ring', EMPTY);
+      setSource('pulse-ring', EMPTY);
+      return;
+    }
+
+    const { lng, lat, radius = 300 } = sourceLocation;
+
     setSource('source-loc', {
       type: 'FeatureCollection',
-      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [sourceLocation.lng, sourceLocation.lat] }, properties: {} }],
+      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }],
     });
-    setSource('radius-ring', makeCircle(sourceLocation.lng, sourceLocation.lat, sourceLocation.radius || 300));
-    mapRef.current?.flyTo({ center: [sourceLocation.lng, sourceLocation.lat], zoom: 16, pitch: 50, duration: 600 });
+    setSource('radius-ring', makeCircle(lng, lat, radius));
+
+    // 파장 애니메이션 데이터 (중심점 1개)
+    const pulseData = {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }],
+    };
+    setSource('pulse-ring', pulseData);
+
+    mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, pitch: 50, duration: 600 });
+
+    // rAF 파장 애니메이션
+    const PERIOD = 2000; // ms per wave cycle
+    const OFFSETS = [0, 667, 1333]; // 3개 원의 위상 차이
+
+    let lastTs = null;
+    const animate = (ts) => {
+      if (!loadedRef.current || !mapRef.current) return;
+      if (!lastTs) lastTs = ts;
+      pulseRef.current.t += ts - lastTs;
+      lastTs = ts;
+
+      OFFSETS.forEach((offset, i) => {
+        const phase = ((pulseRef.current.t + offset) % PERIOD) / PERIOD; // 0→1
+        const radius = 10 + phase * 80;   // 10px → 90px
+        const opacity = 1 - phase;         // 1 → 0
+        mapRef.current?.setPaintProperty(`pulse-ring-${i}`, 'circle-radius', radius);
+        mapRef.current?.setPaintProperty(`pulse-ring-${i}`, 'circle-stroke-opacity', opacity * 0.8);
+      });
+
+      animRef.current = requestAnimationFrame(animate);
+    };
+    animRef.current = requestAnimationFrame(animate);
+
+    return () => cancelAnimationFrame(animRef.current);
   }, [sourceLocation, setSource]);
 
-  // 방음벽 반영
+  /* ── 방음벽 렌더링 ──────────────────────────────────── */
   useEffect(() => {
-    if (!barrierCoords || barrierCoords.length < 2) { setSource('barriers', EMPTY); return; }
-    setSource('barriers', {
-      type: 'FeatureCollection',
-      features: barrierCoords.map((seg) => ({
-        type: 'Feature',
-        geometry: { type: 'LineString', coordinates: seg },
-        properties: { height: barrierHeight },
-      })),
-    });
+    // barrierCoords = [[[lng,lat],[lng,lat]], ...] 선분 배열
+    if (!barrierCoords || barrierCoords.length === 0) {
+      setSource('barriers', EMPTY);
+      return;
+    }
+    const features = barrierCoords.map((seg) => ({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: seg },
+      properties: { height: barrierHeight },
+    }));
+    setSource('barriers', { type: 'FeatureCollection', features });
   }, [barrierCoords, barrierHeight, setSource]);
 
-  // 건물 GeoJSON 반영
+  /* ── 건물 GeoJSON ───────────────────────────────────── */
   useEffect(() => {
     setSource('noise-buildings', buildingGeoJSON || EMPTY);
   }, [buildingGeoJSON, setSource]);
@@ -207,12 +353,18 @@ export default function MapLibre3D({
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 }
 
+/* ── 원 GeoJSON 생성 ───────────────────────────────────── */
 function makeCircle(lng, lat, r, steps = 64) {
   const R = 6371000;
   const coords = Array.from({ length: steps + 1 }, (_, i) => {
     const a = (i / steps) * 2 * Math.PI;
-    return [lng + (r / R) * (180 / Math.PI) * Math.sin(a) / Math.cos(lat * Math.PI / 180),
-            lat + (r / R) * (180 / Math.PI) * Math.cos(a)];
+    return [
+      lng + (r / R) * (180 / Math.PI) * Math.sin(a) / Math.cos(lat * Math.PI / 180),
+      lat + (r / R) * (180 / Math.PI) * Math.cos(a),
+    ];
   });
-  return { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] }, properties: {} }] };
+  return {
+    type: 'FeatureCollection',
+    features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] }, properties: {} }],
+  };
 }
