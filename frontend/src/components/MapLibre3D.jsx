@@ -248,56 +248,111 @@ export default function MapLibre3D({
       startPx = { x: e.clientX, y: e.clientY };
     };
 
+    // 캔버스 크기를 실제 픽셀 해상도에 맞게 초기화
+    const initCanvas = () => {
+      const canvas = drawCanvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const dpr  = window.devicePixelRatio || 1;
+      canvas.width  = rect.width  * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+    };
+    initCanvas();
+
+    // 두 점 사이 거리(m) 계산
+    const haversineM = (lng1, lat1, lng2, lat2) => {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    };
+
     // 캔버스에 미리보기 선 그리기
     const drawPreview = (sx, sy, ex, ey) => {
       const canvas = drawCanvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      canvas.width  = rect.width;
-      canvas.height = rect.height;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const dpr  = window.devicePixelRatio || 1;
+      const ctx  = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
       const x1 = sx - rect.left, y1 = sy - rect.top;
       const x2 = ex - rect.left, y2 = ey - rect.top;
-      // 바깥 글로우
+
+      // ── 선 ──────────────────────────────────
+      // 외곽 흰 테두리 (가시성 확보)
       ctx.beginPath();
       ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      ctx.strokeStyle = 'rgba(255, 107, 53, 0.35)';
-      ctx.lineWidth = 14;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-      // 메인 선
-      ctx.beginPath();
-      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      ctx.strokeStyle = '#FF6B35';
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 6;
       ctx.lineCap = 'round';
       ctx.setLineDash([]);
       ctx.stroke();
-      // 밝은 하이라이트
+
+      // 주 색상 실선
       ctx.beginPath();
       ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      ctx.strokeStyle = '#FFB300';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#E84040';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
       ctx.stroke();
-      ctx.setLineDash([]);
-      // 시작/끝 점
-      [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach(({ x, y }) => {
+
+      // ── 시작점 원 ────────────────────────────
+      ctx.beginPath();
+      ctx.arc(x1, y1, 7, 0, Math.PI * 2);
+      ctx.fillStyle = 'white';
+      ctx.fill();
+      ctx.strokeStyle = '#E84040';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // ── 끝점 원 ─────────────────────────────
+      ctx.beginPath();
+      ctx.arc(x2, y2, 7, 0, Math.PI * 2);
+      ctx.fillStyle = '#E84040';
+      ctx.fill();
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // ── 거리 라벨 ────────────────────────────
+      const s = unproject(sx, sy);
+      const d = unproject(ex, ey);
+      if (s && d) {
+        const dist = haversineM(s[0], s[1], d[0], d[1]);
+        const label = dist >= 1000
+          ? `${(dist/1000).toFixed(2)} km`
+          : `${Math.round(dist)} m`;
+
+        const mx = (x1 + x2) / 2;
+        const my = (y1 + y2) / 2 - 18;
+
+        ctx.font = 'bold 13px "Noto Sans KR", Arial, sans-serif';
+        const tw = ctx.measureText(label).width;
+
+        // 라벨 배경
+        ctx.fillStyle = 'rgba(40,40,40,0.82)';
         ctx.beginPath();
-        ctx.arc(x, y, 6, 0, Math.PI * 2);
-        ctx.fillStyle = '#FF6B35';
+        ctx.roundRect(mx - tw/2 - 8, my - 14, tw + 16, 22, 5);
         ctx.fill();
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      });
+
+        // 라벨 텍스트
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, mx, my - 3);
+      }
     };
 
     const clearPreview = () => {
       const canvas = drawCanvasRef.current;
       if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const dpr = window.devicePixelRatio || 1;
+      const ctx  = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
     };
 
     const onMove = (e) => {
