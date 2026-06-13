@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: noise-backend
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CALCULATOR_URL
+        fromService:
+          type: web
+          name: noise-calculator
+          property: url
+
+  - type: web
+    name: noise-calculator
+    runtime: docker
+    dockerfilePath: calculator/Dockerfile
+    dockerContext: calculator
+    plan: free
+    healthCheckPath: /health
