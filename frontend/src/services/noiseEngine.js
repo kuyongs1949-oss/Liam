@@ -216,7 +216,12 @@ function barrierInsertionLoss(d1, d2, Hb, Hs, Hr) {
   return Math.min(10 * Math.log10(3 + 20 * N), 20);
 }
 
-export function calculateFloorNoise({ lwTotal, sourceLat, sourceLng, receiverLat, receiverLng, floorNum, barrierCoords = [], barrierHeight = 3 }) {
+export function calculateFloorNoise({
+  lwTotal, sourceLat, sourceLng, receiverLat, receiverLng,
+  floorNum, barrierCoords = [], barrierHeight = 3,
+  barrierD1 = 0, barrierD2 = 0,  // 수동 입력 거리 (0이면 기하학적 계산)
+  sufferingMonths = 3,
+}) {
   const Hs = 1.5;
   const Hr = Math.max(floorNum * 3, 3);
   const dist = Math.max(haversine(sourceLat, sourceLng, receiverLat, receiverLng), 1);
@@ -227,7 +232,18 @@ export function calculateFloorNoise({ lwTotal, sourceLat, sourceLng, receiverLat
   const Agr = Hr > 6 ? 0 : Math.max(4.8 - (2 * hm / dist) * (17 + 300 / dist), 0);
 
   let Abar = 0;
-  if (barrierCoords.length >= 2) {
+
+  // 수동 d1/d2가 입력된 경우 우선 사용
+  if (barrierD1 > 0 && barrierD2 > 0 && barrierHeight > 0) {
+    // 높이에 따라 방음벽 효과 감소: 수음점이 방음벽보다 높으면 효과 없음
+    if (Hr < barrierHeight + 0.5) {
+      Abar = barrierInsertionLoss(barrierD1, barrierD2, barrierHeight, Hs, Hr);
+    } else {
+      // 방음벽 위로 노출되는 층은 회절 감쇠만 소량 적용
+      const excess = Hr - barrierHeight;
+      Abar = Math.max(0, barrierInsertionLoss(barrierD1, barrierD2, barrierHeight, Hs, Hr) - excess * 2);
+    }
+  } else if (barrierCoords.length >= 2) {
     const S = [sourceLng, sourceLat];
     const R = [receiverLng, receiverLat];
     for (let i = 0; i < barrierCoords.length - 1; i++) {
@@ -238,7 +254,14 @@ export function calculateFloorNoise({ lwTotal, sourceLat, sourceLng, receiverLat
         if (pt) {
           const d1 = Math.max(haversine(sourceLat, sourceLng, pt[1], pt[0]), 1);
           const d2 = Math.max(haversine(pt[1], pt[0], receiverLat, receiverLng), 1);
-          Abar = Math.max(Abar, barrierInsertionLoss(d1, d2, barrierHeight, Hs, Hr));
+          let loss = 0;
+          if (Hr < barrierHeight + 0.5) {
+            loss = barrierInsertionLoss(d1, d2, barrierHeight, Hs, Hr);
+          } else {
+            const excess = Hr - barrierHeight;
+            loss = Math.max(0, barrierInsertionLoss(d1, d2, barrierHeight, Hs, Hr) - excess * 2);
+          }
+          Abar = Math.max(Abar, loss);
         }
       }
     }
@@ -247,6 +270,7 @@ export function calculateFloorNoise({ lwTotal, sourceLat, sourceLng, receiverLat
   const Lrec = lwTotal - Adiv - Aatm - Agr - Abar;
   const level = classifyNoise(Lrec);
   const std = level ? COMPENSATION[level] : null;
+  const compensation = std ? Math.round(std.base * std.coeff * sufferingMonths) : 0;
 
   return {
     floor: floorNum,
@@ -257,12 +281,17 @@ export function calculateFloorNoise({ lwTotal, sourceLat, sourceLng, receiverLat
     A_barrier: +Abar.toFixed(1),
     exceeds_65db: Lrec > 65,
     noise_level: level || 'safe',
-    compensation_3m: std ? Math.round(std.base * std.coeff * 3) : 0,
+    compensation,
     color: getColor(Lrec),
   };
 }
 
-export function calculateBuildingNoise({ lwTotal, sourceLat, sourceLng, building, barrierCoords = [], barrierHeight = 3 }) {
+export function calculateBuildingNoise({
+  lwTotal, sourceLat, sourceLng, building,
+  barrierCoords = [], barrierHeight = 3,
+  barrierD1 = 0, barrierD2 = 0,
+  sufferingMonths = 3,
+}) {
   const { centroid_lat, centroid_lng, floors } = building;
   const floorResults = [];
 
@@ -271,21 +300,27 @@ export function calculateBuildingNoise({ lwTotal, sourceLat, sourceLng, building
       lwTotal, sourceLat, sourceLng,
       receiverLat: centroid_lat, receiverLng: centroid_lng,
       floorNum: f, barrierCoords, barrierHeight,
+      barrierD1, barrierD2, sufferingMonths,
     }));
   }
 
   const maxFloor = floorResults.reduce((a, b) => (a.noise_db > b.noise_db ? a : b));
   const exceeding = floorResults.filter((f) => f.exceeds_65db);
+  const totalComp = exceeding.reduce((s, f) => s + f.compensation, 0);
+  const dist = haversine(sourceLat, sourceLng, centroid_lat, centroid_lng);
 
   return {
     ...building,
+    distance: +dist.toFixed(0),
     floor_results: floorResults,
     max_noise_db: maxFloor.noise_db,
     max_floor: maxFloor.floor,
     exceeds_65db: maxFloor.noise_db > 65,
     color: getColor(maxFloor.noise_db),
-    height: maxFloor.noise_db > 65 ? building.height : building.height,
     exceeding_floors: exceeding.length,
-    total_compensation_3m: exceeding.reduce((s, f) => s + f.compensation_3m, 0),
+    total_compensation: totalComp,
+    // backward compat
+    total_compensation_3m: totalComp,
+    noise_level: maxFloor.noise_level || 'safe',
   };
 }
