@@ -142,11 +142,6 @@ export default function CalculationForm({ mode = 'quick' }) {
           {error}
         </Alert>
       )}
-      {loading && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          계산 중입니다... 처음 실행 시 서버 기동으로 20~30초 소요될 수 있습니다.
-        </Alert>
-      )}
 
       {/* ── 장비 선택 ── */}
       <Card sx={{ mb: 2 }}>
