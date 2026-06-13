@@ -135,6 +135,29 @@ export default function SiteAnalysisPage() {
           barrierHeight: barrierSegments.length > 0 ? barrierHeight : 0, sufferingMonths,
         })
       );
+
+      // OSM 주소가 없는 건물만 Nominatim 역지오코딩 (최대 5건 병렬)
+      const noAddr = calcResults.filter((r) => !r.addr);
+      const chunks = [];
+      for (let i = 0; i < noAddr.length; i += 5) chunks.push(noAddr.slice(i, i + 5));
+      for (const chunk of chunks) {
+        await Promise.all(chunk.map(async (r) => {
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${r.centroid_lat}&lon=${r.centroid_lng}&format=json&accept-language=ko`,
+              { headers: { 'User-Agent': 'NoiseAssessmentSystem/1.0' } }
+            );
+            const data = await res.json();
+            const a = data.address || {};
+            r.addr = [a.road, a.house_number].filter(Boolean).join(' ')
+              || a.suburb || a.quarter || a.neighbourhood || data.display_name?.split(',')[0] || '';
+            if (!r.name || r.name === '건물') {
+              r.name = a.building || a.amenity || a.leisure || '건물';
+            }
+          } catch { /* 실패 시 공백 유지 */ }
+        }));
+      }
+
       setBuildings({
         ...geoJSON,
         features: geoJSON.features.map((f, i) => {
@@ -504,7 +527,14 @@ export default function SiteAnalysisPage() {
                         <ApartmentIcon sx={{ fontSize: 16, color: r.exceeds_65db ? lv.color : '#BDC1C6' }} />
                       </Box>
                       <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                        <Typography variant="body2" fontWeight={500} noWrap>{r.name || '건물'}</Typography>
+                        <Typography variant="body2" fontWeight={600} noWrap>
+                          {r.name && r.name !== '건물' ? r.name : `건물 (${r.distance}m)`}
+                        </Typography>
+                        {r.addr && (
+                          <Typography variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: 11 }}>
+                            {r.addr}
+                          </Typography>
+                        )}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexWrap: 'wrap' }}>
                           <Typography variant="caption" color="text.secondary">
                             {r.floors}층 · {r.distance}m
@@ -631,15 +661,23 @@ function GoogleSection({ icon, title, dimmed, children }) {
 
 /* ── 층별 테이블 ── */
 function FloorTable({ building, sufferingMonths }) {
-  const { floor_results = [], total_compensation, name, barrier_d1, barrier_d2 } = building;
+  const { floor_results = [], total_compensation, name, addr, barrier_d1, barrier_d2, floors, distance } = building;
+  const displayName = name && name !== '건물' ? name : `건물`;
   return (
     <Box sx={{ background: '#F8F9FA', borderBottom: '3px solid #1A73E8' }}>
-      <Box sx={{ px: 2, py: 1, background: '#E8F0FE', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <ApartmentIcon sx={{ fontSize: 14, color: '#1A73E8' }} />
-          <Typography variant="caption" fontWeight={600} color="primary">{name} 층별 소음</Typography>
+      <Box sx={{ px: 2, py: 1, background: '#E8F0FE' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <ApartmentIcon sx={{ fontSize: 14, color: '#1A73E8' }} />
+            <Typography variant="caption" fontWeight={700} color="primary">{displayName}</Typography>
+          </Box>
+          <Typography variant="caption" fontWeight={700} color="error">인당 ₩{total_compensation.toLocaleString()}</Typography>
         </Box>
-        <Typography variant="caption" fontWeight={700} color="error">인당 ₩{total_compensation.toLocaleString()}</Typography>
+        {addr && (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: 11, mt: 0.2 }}>
+            {addr} · {floors}층 · {distance}m
+          </Typography>
+        )}
       </Box>
       {barrier_d1 > 0 && (
         <Box sx={{ px: 2, py: 0.6, background: '#E8F0FE', borderBottom: '1px solid #BDC1C6' }}>

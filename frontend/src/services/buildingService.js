@@ -86,13 +86,26 @@ function parseOSM(data) {
         max_noise_db: 0,
         centroid_lat: centroid[1],
         centroid_lng: centroid[0],
-        addr: way.tags?.['addr:road'] || way.tags?.['addr:full'] || '',
+        addr: buildAddr(way.tags),
         building_type: way.tags?.building,
       },
     });
   }
 
   return { type: 'FeatureCollection', features };
+}
+
+function buildAddr(tags = {}) {
+  // OSM 주소 태그 조합: 도로명 + 건물번호 OR 지번 OR full
+  const road   = tags['addr:road']   || tags['addr:street'] || '';
+  const hnum   = tags['addr:housenumber'] || '';
+  const full   = tags['addr:full']   || '';
+  const city   = tags['addr:city']   || tags['addr:quarter'] || '';
+  if (road && hnum) return `${road} ${hnum}`;
+  if (road)         return road;
+  if (full)         return full;
+  if (city)         return city;
+  return '';
 }
 
 function getCentroid(coords) {
