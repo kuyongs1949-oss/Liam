@@ -12,10 +12,12 @@ import EngineeringIcon from '@mui/icons-material/Engineering';
 import CalculateIcon from '@mui/icons-material/Calculate';
 import GroupsIcon from '@mui/icons-material/Groups';
 import MapIcon from '@mui/icons-material/Map';
+import ViewInArIcon from '@mui/icons-material/ViewInAr';
 
 import CalculationForm from '../components/CalculationForm';
 import MapViewer from '../components/MapViewer';
 import CompensationTable from '../components/CompensationTable';
+import SiteAnalysisPage from './SiteAnalysisPage';
 
 function TabPanel({ children, value, index }) {
   return value === index ? <Box>{children}</Box> : null;
@@ -49,6 +51,7 @@ export default function CalculationPage() {
             '& .MuiTabs-indicator': { background: 'white', height: 3 },
           }}
         >
+          <Tab icon={<ViewInArIcon />} iconPosition="start" label="3D 현장 분석" />
           <Tab icon={<CalculateIcon />} iconPosition="start" label="간편 계산" />
           <Tab icon={<GroupsIcon />} iconPosition="start" label="다중 세대 계산" />
         </Tabs>
@@ -56,8 +59,13 @@ export default function CalculationPage() {
 
       <Container maxWidth="xl" sx={{ py: 3 }}>
 
-        {/* ── 탭 0: 간편 계산 ── */}
+        {/* ── 탭 0: 3D 현장 분석 ── */}
         <TabPanel value={tab} index={0}>
+          <SiteAnalysisPage />
+        </TabPanel>
+
+        {/* ── 탭 1: 간편 계산 ── */}
+        <TabPanel value={tab} index={1}>
           <Grid container spacing={3}>
             <Grid item xs={12} md={4}>
               <CalculationForm mode="quick" />
@@ -68,8 +76,8 @@ export default function CalculationPage() {
           </Grid>
         </TabPanel>
 
-        {/* ── 탭 1: 다중 세대 계산 ── */}
-        <TabPanel value={tab} index={1}>
+        {/* ── 탭 2: 다중 세대 계산 ── */}
+        <TabPanel value={tab} index={2}>
           <Grid container spacing={3}>
             {/* 입력 폼 */}
             <Grid item xs={12} md={4}>

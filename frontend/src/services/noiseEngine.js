@@ -189,3 +189,103 @@ export function multiCalculate({ equipments, source_lat, source_lng, receptors, 
 export function getEquipments() {
   return Object.entries(EQUIPMENT_DB).map(([id, v]) => ({ id, ...v }));
 }
+
+// ── 3D 층별 계산 ──────────────────────────────────────────
+
+function ccw(A, B, C) {
+  return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0]);
+}
+function segmentsIntersect(a1, a2, b1, b2) {
+  return ccw(a1, b1, b2) !== ccw(a2, b1, b2) && ccw(a1, a2, b1) !== ccw(a1, a2, b2);
+}
+function getIntersectionPoint(a1, a2, b1, b2) {
+  const d1 = [a2[0] - a1[0], a2[1] - a1[1]];
+  const d2 = [b2[0] - b1[0], b2[1] - b1[1]];
+  const cross = d1[0] * d2[1] - d1[1] * d2[0];
+  if (Math.abs(cross) < 1e-12) return null;
+  const t = ((b1[0] - a1[0]) * d2[1] - (b1[1] - a1[1]) * d2[0]) / cross;
+  return [a1[0] + t * d1[0], a1[1] + t * d1[1]];
+}
+
+function barrierInsertionLoss(d1, d2, Hb, Hs, Hr) {
+  const pathOver = Math.sqrt(d1 ** 2 + (Hb - Hs) ** 2) + Math.sqrt(d2 ** 2 + (Hb - Hr) ** 2);
+  const pathDirect = Math.sqrt((d1 + d2) ** 2 + (Hs - Hr) ** 2);
+  const delta = pathOver - pathDirect;
+  if (delta <= 0) return 0;
+  const N = (2 * delta) / 0.25;
+  return Math.min(10 * Math.log10(3 + 20 * N), 20);
+}
+
+export function calculateFloorNoise({ lwTotal, sourceLat, sourceLng, receiverLat, receiverLng, floorNum, barrierCoords = [], barrierHeight = 3 }) {
+  const Hs = 1.5;
+  const Hr = Math.max(floorNum * 3, 3);
+  const dist = Math.max(haversine(sourceLat, sourceLng, receiverLat, receiverLng), 1);
+
+  const Adiv = 20 * Math.log10(dist) + 11;
+  const Aatm = 0.005 * dist;
+  const hm = (Hs + Hr) / 2;
+  const Agr = Hr > 6 ? 0 : Math.max(4.8 - (2 * hm / dist) * (17 + 300 / dist), 0);
+
+  let Abar = 0;
+  if (barrierCoords.length >= 2) {
+    const S = [sourceLng, sourceLat];
+    const R = [receiverLng, receiverLat];
+    for (let i = 0; i < barrierCoords.length - 1; i++) {
+      const B1 = barrierCoords[i];
+      const B2 = barrierCoords[i + 1];
+      if (segmentsIntersect(S, R, B1, B2)) {
+        const pt = getIntersectionPoint(S, R, B1, B2);
+        if (pt) {
+          const d1 = Math.max(haversine(sourceLat, sourceLng, pt[1], pt[0]), 1);
+          const d2 = Math.max(haversine(pt[1], pt[0], receiverLat, receiverLng), 1);
+          Abar = Math.max(Abar, barrierInsertionLoss(d1, d2, barrierHeight, Hs, Hr));
+        }
+      }
+    }
+  }
+
+  const Lrec = lwTotal - Adiv - Aatm - Agr - Abar;
+  const level = classifyNoise(Lrec);
+  const std = level ? COMPENSATION[level] : null;
+
+  return {
+    floor: floorNum,
+    height_m: Hr,
+    noise_db: +Lrec.toFixed(1),
+    A_div: +Adiv.toFixed(1),
+    A_gr: +Agr.toFixed(1),
+    A_barrier: +Abar.toFixed(1),
+    exceeds_65db: Lrec > 65,
+    noise_level: level || 'safe',
+    compensation_3m: std ? Math.round(std.base * std.coeff * 3) : 0,
+    color: getColor(Lrec),
+  };
+}
+
+export function calculateBuildingNoise({ lwTotal, sourceLat, sourceLng, building, barrierCoords = [], barrierHeight = 3 }) {
+  const { centroid_lat, centroid_lng, floors } = building;
+  const floorResults = [];
+
+  for (let f = 1; f <= Math.min(floors, 50); f++) {
+    floorResults.push(calculateFloorNoise({
+      lwTotal, sourceLat, sourceLng,
+      receiverLat: centroid_lat, receiverLng: centroid_lng,
+      floorNum: f, barrierCoords, barrierHeight,
+    }));
+  }
+
+  const maxFloor = floorResults.reduce((a, b) => (a.noise_db > b.noise_db ? a : b));
+  const exceeding = floorResults.filter((f) => f.exceeds_65db);
+
+  return {
+    ...building,
+    floor_results: floorResults,
+    max_noise_db: maxFloor.noise_db,
+    max_floor: maxFloor.floor,
+    exceeds_65db: maxFloor.noise_db > 65,
+    color: getColor(maxFloor.noise_db),
+    height: maxFloor.noise_db > 65 ? building.height : building.height,
+    exceeding_floors: exceeding.length,
+    total_compensation_3m: exceeding.reduce((s, f) => s + f.compensation_3m, 0),
+  };
+}
