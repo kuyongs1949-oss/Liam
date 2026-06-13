@@ -1,41 +1,37 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { calculationService } from '../services/calculationService';
+import { quickCalculate, multiCalculate } from '../services/noiseEngine.js';
 
-// ── 비동기 액션 ──────────────────────────────
+// 로컬 동기 계산 (항상 즉시 결과 반환)
 export const runQuickCalculation = createAsyncThunk(
   'calculation/quick',
-  async (payload, { rejectWithValue }) => {
-    try {
-      return await calculationService.quickCalculate(payload);
-    } catch (err) {
-      return rejectWithValue(err.response?.data?.error || err.message);
-    }
-  }
+  (payload) => quickCalculate(payload)
 );
 
 export const runMultiCalculation = createAsyncThunk(
   'calculation/multi',
-  async (payload, { rejectWithValue }) => {
-    try {
-      return await calculationService.multiCalculate(payload);
-    } catch (err) {
-      return rejectWithValue(err.response?.data?.error || err.message);
-    }
-  }
+  (payload) => multiCalculate(payload)
 );
 
 export const fetchEquipments = createAsyncThunk(
   'calculation/fetchEquipments',
-  async (_, { rejectWithValue }) => {
+  async () => {
     try {
-      return await calculationService.getEquipments();
-    } catch (err) {
-      return rejectWithValue(err.message);
+      const res = await fetch(
+        (import.meta.env.VITE_API_BASE_URL ||
+          (import.meta.env.DEV
+            ? 'http://localhost:3001/api'
+            : 'https://noise-backend-2ucp.onrender.com/api')) +
+          '/calculations/equipments',
+        { signal: AbortSignal.timeout(5000) }
+      );
+      const json = await res.json();
+      return json.data?.equipments || [];
+    } catch {
+      return [];
     }
   }
 );
 
-// ── 슬라이스 ─────────────────────────────────
 const calculationSlice = createSlice({
   name: 'calculation',
   initialState: {
@@ -55,34 +51,31 @@ const calculationSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // Quick Calculate
     builder
       .addCase(runQuickCalculation.pending, (state) => {
-        state.loading = true; state.error = null;
+        state.loading = true; state.error = null; state.quickResult = null;
       })
       .addCase(runQuickCalculation.fulfilled, (state, { payload }) => {
         state.loading = false; state.quickResult = payload;
       })
-      .addCase(runQuickCalculation.rejected, (state, { payload }) => {
-        state.loading = false; state.error = payload;
+      .addCase(runQuickCalculation.rejected, (state, { error }) => {
+        state.loading = false; state.error = error.message;
       });
 
-    // Multi Calculate
     builder
       .addCase(runMultiCalculation.pending, (state) => {
-        state.loading = true; state.error = null;
+        state.loading = true; state.error = null; state.multiResult = null;
       })
       .addCase(runMultiCalculation.fulfilled, (state, { payload }) => {
         state.loading = false; state.multiResult = payload;
       })
-      .addCase(runMultiCalculation.rejected, (state, { payload }) => {
-        state.loading = false; state.error = payload;
+      .addCase(runMultiCalculation.rejected, (state, { error }) => {
+        state.loading = false; state.error = error.message;
       });
 
-    // Fetch Equipments
     builder
       .addCase(fetchEquipments.fulfilled, (state, { payload }) => {
-        state.equipments = payload.data?.equipments || [];
+        if (payload.length > 0) state.equipments = payload;
       });
   },
 });
