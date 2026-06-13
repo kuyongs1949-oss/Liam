@@ -65,12 +65,13 @@ export default function MapLibre3D({
   onBarrierComplete,
   onBuildingSelect,
 }) {
-  const containerRef = useRef(null);
-  const overlayRef   = useRef(null);
-  const mapRef       = useRef(null);
-  const loadedRef    = useRef(false);
-  const pendingRef   = useRef({});
-  const animRef      = useRef(null);
+  const containerRef  = useRef(null);
+  const overlayRef    = useRef(null);
+  const drawCanvasRef = useRef(null);   // 펜 드래그 미리보기용 캔버스
+  const mapRef        = useRef(null);
+  const loadedRef     = useRef(false);
+  const pendingRef    = useRef({});
+  const animRef       = useRef(null);
 
   // 콜백 refs (항상 최신 유지)
   const onBarrierCompleteRef = useRef(onBarrierComplete);
@@ -247,23 +248,68 @@ export default function MapLibre3D({
       startPx = { x: e.clientX, y: e.clientY };
     };
 
-    const onMove = (e) => {
-      if (!startPx || !loadedRef.current) return;
-      const s = unproject(startPx.x, startPx.y);
-      const d = unproject(e.clientX, e.clientY);
-      if (!s || !d) return;
-      mapRef.current?.getSource('barrier-preview')?.setData({
-        type: 'FeatureCollection',
-        features: [{ type: 'Feature',
-          geometry: { type: 'LineString', coordinates: [s, d] }, properties: {} }],
+    // 캔버스에 미리보기 선 그리기
+    const drawPreview = (sx, sy, ex, ey) => {
+      const canvas = drawCanvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width  = rect.width;
+      canvas.height = rect.height;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const x1 = sx - rect.left, y1 = sy - rect.top;
+      const x2 = ex - rect.left, y2 = ey - rect.top;
+      // 바깥 글로우
+      ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.strokeStyle = 'rgba(255, 107, 53, 0.35)';
+      ctx.lineWidth = 14;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      // 메인 선
+      ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.strokeStyle = '#FF6B35';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.setLineDash([]);
+      ctx.stroke();
+      // 밝은 하이라이트
+      ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.strokeStyle = '#FFB300';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 시작/끝 점
+      [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach(({ x, y }) => {
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#FF6B35';
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
       });
+    };
+
+    const clearPreview = () => {
+      const canvas = drawCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+
+    const onMove = (e) => {
+      if (!startPx) return;
+      drawPreview(startPx.x, startPx.y, e.clientX, e.clientY);
     };
 
     const onUp = (e) => {
       if (!startPx) return;
       const sp = startPx;
       startPx = null;
-      if (loadedRef.current) mapRef.current?.getSource('barrier-preview')?.setData(EMPTY);
+      clearPreview();
       const s = unproject(sp.x, sp.y);
       const d = unproject(e.clientX, e.clientY);
       if (!s || !d) return;
@@ -281,7 +327,7 @@ export default function MapLibre3D({
       overlay.removeEventListener('mousedown', onDown);
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup',   onUp);
-      // 정리: 포인터 이벤트 복원
+      clearPreview();
       container.style.pointerEvents = '';
       overlay.style.pointerEvents   = 'none';
       overlay.style.cursor          = 'default';
@@ -391,10 +437,20 @@ export default function MapLibre3D({
         ref={overlayRef}
         style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          pointerEvents: 'none',   // 초기값; drawMode effect가 변경
+          pointerEvents: 'none',
           zIndex: 3,
           background: 'transparent',
           userSelect: 'none',
+        }}
+      />
+      {/* 드래그 미리보기 캔버스 — 항상 최상단, 이벤트 무시 */}
+      <canvas
+        ref={drawCanvasRef}
+        style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          width: '100%', height: '100%',
+          pointerEvents: 'none',
+          zIndex: 4,
         }}
       />
     </div>
