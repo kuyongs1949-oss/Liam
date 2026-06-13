@@ -24,16 +24,17 @@ import { calculateBuildingNoise, calcSourceToBarrierDist, getEquipments } from '
 
 const EQUIPMENT_LIST = getEquipments();
 
+// 환경분쟁조정위원회 피해배상액 (2026.1.1~, 원/인, 6개월 기준 상한)
 const COMP_TABLE = [
-  { key: 'level1', range: '65 ~ 70dB', monthly: 150000, color: '#4CAF50', bg: '#E8F5E9', label: '경미' },
-  { key: 'level2', range: '70 ~ 75dB', monthly: 600000, color: '#FF9800', bg: '#FFF3E0', label: '보통' },
-  { key: 'level3', range: '75 ~ 80dB', monthly: 666667, color: '#F44336', bg: '#FFEBEE', label: '심각' },
-  { key: 'level4', range: '80dB 이상', monthly: 800000, color: '#9C27B0', bg: '#F3E5F5', label: '매우심각' },
+  { key: 'level1', range: '65 ~ 70dB', excessRange: '초과 1~5dB',  per6m: 1_480_000, color: '#4CAF50', bg: '#E8F5E9', label: '경미' },
+  { key: 'level2', range: '70 ~ 75dB', excessRange: '초과 6~10dB', per6m: 2_088_000, color: '#FF9800', bg: '#FFF3E0', label: '보통' },
+  { key: 'level3', range: '75 ~ 80dB', excessRange: '초과 11~15dB',per6m: 2_959_000, color: '#F44336', bg: '#FFEBEE', label: '심각' },
+  { key: 'level4', range: '80dB 이상', excessRange: '초과 16dB~',  per6m: 4_148_000, color: '#9C27B0', bg: '#F3E5F5', label: '매우심각' },
 ];
 const COMP_MAP = {
   level1: COMP_TABLE[0], level2: COMP_TABLE[1],
   level3: COMP_TABLE[2], level4: COMP_TABLE[3],
-  safe: { range: '65dB 미만', monthly: 0, color: '#90A4AE', bg: '#ECEFF1', label: '안전' },
+  safe: { range: '65dB 미만', excessRange: '-', per6m: 0, color: '#90A4AE', bg: '#ECEFF1', label: '안전' },
 };
 
 function dbColor(db) {
@@ -355,27 +356,56 @@ export default function SiteAnalysisPage() {
           <Box sx={{ borderRadius: 1, overflow: 'hidden', border: '1px solid #CFD8DC' }}>
             <Box sx={{ px: 1.2, py: 0.6, background: '#455A64' }}>
               <Typography variant="caption" color="white" fontWeight={700}>
-                환경분쟁조정위원회 보상 기준 (월/세대)
+                환경분쟁조정위원회 피해배상 기준 (원/인, 2026.1.1~)
               </Typography>
             </Box>
-            {COMP_TABLE.map((c) => (
-              <Box key={c.key} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                px: 1.2, py: 0.5, background: c.bg, borderBottom: '1px solid #E0E0E0' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                  <Box sx={{ width: 9, height: 9, borderRadius: '50%', background: c.color }} />
-                  <Typography variant="caption" fontWeight={600}>{c.range}</Typography>
-                  <Typography variant="caption" color="text.secondary">({c.label})</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography variant="caption" fontWeight={700} color={c.color} display="block">
-                    월 ₩{c.monthly.toLocaleString()}
+            {/* 헤더 */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', px: 1, py: 0.4, background: '#607D8B' }}>
+              {['소음도', '초과소음도', `${sufferingMonths}개월 인당`].map((h) => (
+                <Typography key={h} variant="caption" color="white" fontWeight={700} fontSize={10}>{h}</Typography>
+              ))}
+            </Box>
+            {COMP_TABLE.map((c) => {
+              // 해당 기간에 맞는 인당 보상액 계산 (noiseEngine과 동일 로직)
+              const m = Math.min(sufferingMonths, 36);
+              const PERIODS = [
+                { endMonth: 6,  amounts: [1_480_000, 2_088_000, 2_959_000, 4_148_000] },
+                { endMonth: 12, amounts: [1_894_000, 2_682_000, 3_789_000, 5_365_000] },
+                { endMonth: 24, amounts: [2_309_000, 3_263_000, 4_618_000, 6_527_000] },
+                { endMonth: 36, amounts: [2_558_000, 3_622_000, 5_117_000, 7_232_000] },
+              ];
+              const bandIdx = ['level1','level2','level3','level4'].indexOf(c.key);
+              let prev = { endMonth: 0, amount: 0 };
+              let perPerson = 0;
+              for (const p of PERIODS) {
+                const curr = { endMonth: p.endMonth, amount: p.amounts[bandIdx] };
+                if (m <= curr.endMonth) {
+                  const t = (m - prev.endMonth) / (curr.endMonth - prev.endMonth);
+                  perPerson = Math.round(prev.amount + t * (curr.amount - prev.amount));
+                  break;
+                }
+                prev = { endMonth: curr.endMonth, amount: curr.amount };
+                perPerson = curr.amount;
+              }
+              return (
+                <Box key={c.key} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center',
+                  px: 1, py: 0.5, background: c.bg, borderBottom: '1px solid #E0E0E0' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+                    <Typography variant="caption" fontWeight={600} color={c.color}>{c.range}</Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">{c.excessRange}</Typography>
+                  <Typography variant="caption" fontWeight={700} color={c.color}>
+                    ₩{perPerson.toLocaleString()}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {sufferingMonths}개월 → ₩{(c.monthly * sufferingMonths).toLocaleString()}
-                  </Typography>
                 </Box>
-              </Box>
-            ))}
+              );
+            })}
+            <Box sx={{ px: 1, py: 0.5, background: '#ECEFF1' }}>
+              <Typography variant="caption" color="text.secondary">
+                * 수인한도 65dB 초과분 기준 · 인당 총액 (누적)
+              </Typography>
+            </Box>
           </Box>
         </SectionCard>
 
@@ -529,7 +559,7 @@ function ResultList({ results, exceeding, totalComp, sufferingMonths, expandedId
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.4 }}>
                   {r.exceeds_65db ? (
                     <Typography variant="caption" fontWeight={700} color="error.main">
-                      ₩{r.total_compensation.toLocaleString()} ({sufferingMonths}개월)
+                      인당 ₩{r.total_compensation.toLocaleString()} ({sufferingMonths}개월)
                     </Typography>
                   ) : (
                     <Typography variant="caption" color="text.disabled">보상 대상 아님</Typography>
@@ -572,7 +602,7 @@ function FloorTable({ building, sufferingMonths }) {
           </Typography>
         )}
         <Typography variant="caption" fontWeight={700} color="error.main">
-          {sufferingMonths}개월 총 ₩{total_compensation.toLocaleString()}
+          인당 {sufferingMonths}개월 총 ₩{total_compensation.toLocaleString()}
         </Typography>
       </Box>
       <Box sx={{ maxHeight: 280, overflowY: 'auto' }}>
@@ -581,9 +611,9 @@ function FloorTable({ building, sufferingMonths }) {
             <TableRow sx={{ '& th': { background: '#F5F5F5', py: 0.5, fontSize: 11, fontWeight: 700 } }}>
               <TableCell>층</TableCell>
               <TableCell>높이</TableCell>
-              <TableCell>소음도</TableCell>
+              <TableCell>소음도 / 초과</TableCell>
               <TableCell>방음벽 감쇠</TableCell>
-              <TableCell>보상금</TableCell>
+              <TableCell>인당 보상금</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -599,6 +629,11 @@ function FloorTable({ building, sufferingMonths }) {
                       <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
                       <Typography variant="caption" fontWeight={800} color={c.color}>{f.noise_db}dB</Typography>
                     </Box>
+                    {f.exceeds_65db && (
+                      <Typography variant="caption" color="error.main" sx={{ fontSize: 10 }}>
+                        +{f.excess_db}dB 초과
+                      </Typography>
+                    )}
                     <Box sx={{ width: 48, height: 3, borderRadius: 2, background: '#E0E0E0', mt: 0.3 }}>
                       <Box sx={{ height: '100%', borderRadius: 2, background: c.color,
                         width: `${Math.min(100, Math.max(0, (f.noise_db - 40) / 60 * 100))}%` }} />

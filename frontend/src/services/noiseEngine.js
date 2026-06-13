@@ -13,11 +13,52 @@ const EQUIPMENT_DB = {
   jackhammer:      { name: '잭해머',       Lw: 115 },
 };
 
+// 환경분쟁조정위원회 피해배상액 기준 (2026.1.1 시행, 단위: 원/인)
+// 초과소음도 = 측정소음도 - 수인한도(65dB)
+// 각 값은 해당 기간까지의 누적 총액 상한
+//   excessBand: [1~5dB, 6~10dB, 11~15dB, 16~20dB]
+const COMP_PERIODS = [
+  { endMonth:  6, amounts: [1_480_000, 2_088_000, 2_959_000, 4_148_000] },
+  { endMonth: 12, amounts: [1_894_000, 2_682_000, 3_789_000, 5_365_000] },
+  { endMonth: 24, amounts: [2_309_000, 3_263_000, 4_618_000, 6_527_000] },
+  { endMonth: 36, amounts: [2_558_000, 3_622_000, 5_117_000, 7_232_000] },
+];
+
+function excessBandIndex(noisedB) {
+  const excess = noisedB - 65;
+  if (excess < 1)  return -1; // 보상 없음
+  if (excess <= 5)  return 0;
+  if (excess <= 10) return 1;
+  if (excess <= 15) return 2;
+  return 3;
+}
+
+// 인당 총 배상액 계산 (원/인)
+function calcCompensationPerPerson(noisedB, months) {
+  const band = excessBandIndex(noisedB);
+  if (band < 0 || months <= 0) return 0;
+
+  const m = Math.min(months, 36);
+
+  // 해당 기간이 속하는 구간 찾기 (선형 보간)
+  let prev = { endMonth: 0, amount: 0 };
+  for (const period of COMP_PERIODS) {
+    const curr = { endMonth: period.endMonth, amount: period.amounts[band] };
+    if (m <= curr.endMonth) {
+      const t = (m - prev.endMonth) / (curr.endMonth - prev.endMonth);
+      return Math.round(prev.amount + t * (curr.amount - prev.amount));
+    }
+    prev = { endMonth: curr.endMonth, amount: curr.amount };
+  }
+  return COMP_PERIODS[COMP_PERIODS.length - 1].amounts[band];
+}
+
+// 하위 호환용 (간편계산 등에서 사용)
 const COMPENSATION = {
-  level1: { range: '65~70dB', base: 300000,  coeff: 0.5, desc: '생활 방해 (경미)' },
-  level2: { range: '70~75dB', base: 600000,  coeff: 1.0, desc: '생활 방해 (보통)' },
-  level3: { range: '75~80dB', base: 1000000, coeff: 1.5, desc: '생활 방해 (심각)' },
-  level4: { range: '80dB+',   base: 1200000, coeff: 2.0, desc: '생활 방해 (매우 심각)' },
+  level1: { range: '65~70dB', desc: '경미한 생활방해' },
+  level2: { range: '70~75dB', desc: '보통 생활방해' },
+  level3: { range: '75~80dB', desc: '심각한 생활방해' },
+  level4: { range: '80dB+',   desc: '매우 심각한 생활방해' },
 };
 
 function combineEquipments(equipments) {
@@ -82,7 +123,7 @@ export function quickCalculate({ equipments, d1, barrier_height = 0, barrier_mat
 
   const level = classifyNoise(Lrec);
   const std   = level ? COMPENSATION[level] : null;
-  const perHH = std ? std.base * std.coeff * 3 : 0;
+  const perPerson3m = calcCompensationPerPerson(Lrec, 3);
 
   return {
     equipments: equipments.map((eq) => ({
@@ -100,11 +141,13 @@ export function quickCalculate({ equipments, d1, barrier_height = 0, barrier_mat
       A_atmospheric: +Aatm.toFixed(3),
       L_receiver: +Lrec.toFixed(1),
       exceeds_65db: Lrec > 65,
+      excess_db: +Math.max(0, Lrec - 65).toFixed(1),
     },
     compensation_preview: {
       noise_level: level || 'safe',
       description: std?.desc || '65dB 미만 - 보상 대상 아님',
-      per_household_3months: Math.round(perHH),
+      per_person_3months: perPerson3m,
+      per_household_3months: perPerson3m, // compat
       color: getColor(Lrec),
     },
   };
@@ -291,13 +334,14 @@ export function calculateFloorNoise({
 
   const Lrec = lwTotal - Adiv - Aatm - Agr - Abar;
   const level = classifyNoise(Lrec);
-  const std = level ? COMPENSATION[level] : null;
-  const compensation = std ? Math.round(std.base * std.coeff * sufferingMonths) : 0;
+  // 환경분쟁조정위원회 기준: 인당 보상액
+  const compensation = calcCompensationPerPerson(Lrec, sufferingMonths);
 
   return {
     floor: floorNum,
     height_m: Hr,
     noise_db: +Lrec.toFixed(1),
+    excess_db: +Math.max(0, Lrec - 65).toFixed(1),
     A_div: +Adiv.toFixed(1),
     A_gr: +Agr.toFixed(1),
     A_barrier: +Abar.toFixed(1),
@@ -305,7 +349,7 @@ export function calculateFloorNoise({
     barrier_d2: barrierD2used,
     exceeds_65db: Lrec > 65,
     noise_level: level || 'safe',
-    compensation,
+    compensation,   // 원/인
     color: getColor(Lrec),
   };
 }
