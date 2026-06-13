@@ -11,6 +11,7 @@ export default function MapLibre3D({
   buildingGeoJSON,
   drawMode,           // null | 'barrier'
   barrierHeight = 3,
+  flyToLocation,      // { lng, lat, zoom? } - 주소 검색 결과로 지도 이동
   onSourceSet,
   onBarrierComplete,
   onBuildingSelect,
@@ -297,6 +298,14 @@ export default function MapLibre3D({
       })),
     });
   }, [barrierCoords, barrierHeight, setSource]);
+
+  /* ── 주소 검색 결과로 지도 이동 ──────────────────────── */
+  useEffect(() => {
+    if (!flyToLocation) return;
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({ center: [flyToLocation.lng, flyToLocation.lat], zoom: flyToLocation.zoom ?? 16, pitch: 50, duration: 800 });
+  }, [flyToLocation]);
 
   /* ── 건물 GeoJSON ─────────────────────────────────────── */
   useEffect(() => {

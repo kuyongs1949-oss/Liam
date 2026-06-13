@@ -4,7 +4,8 @@ import {
   TextField, Chip, Divider, CircularProgress, Alert, IconButton,
   Table, TableHead, TableRow, TableCell, TableBody,
   FormControl, InputLabel, Select, MenuItem,
-  LinearProgress, Collapse, InputAdornment,
+  LinearProgress, Collapse, InputAdornment, List, ListItem, ListItemButton, ListItemText,
+  Paper,
 } from '@mui/material';
 import CalculateIcon from '@mui/icons-material/Calculate';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -17,6 +18,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import EditIcon from '@mui/icons-material/Edit';
+import SearchIcon from '@mui/icons-material/Search';
 
 import MapLibre3D from '../components/MapLibre3D';
 import { queryBuildings } from '../services/buildingService';
@@ -75,6 +77,12 @@ export default function SiteAnalysisPage() {
 
   const [sufferingMonths, setSufferingMonths] = useState(3);
 
+  // 주소 검색
+  const [addrQuery, setAddrQuery] = useState('');
+  const [addrResults, setAddrResults] = useState([]);
+  const [addrLoading, setAddrLoading] = useState(false);
+  const [flyToLocation, setFlyToLocation] = useState(null);
+
   const [buildings, setBuildings] = useState(null);
   const [results, setResults] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
@@ -93,6 +101,32 @@ export default function SiteAnalysisPage() {
     const d1 = calcSourceToBarrierDist(sourceLocation.lat, sourceLocation.lng, barrierSegments);
     setAutoD1(d1);
   }, [sourceLocation, barrierSegments]);
+
+  const handleAddrSearch = useCallback(async () => {
+    const q = addrQuery.trim();
+    if (!q) return;
+    setAddrLoading(true);
+    setAddrResults([]);
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&countrycodes=kr&accept-language=ko`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
+      const data = await res.json();
+      setAddrResults(data);
+      if (data.length === 0) setError('주소 검색 결과가 없습니다. 다른 주소를 입력해보세요.');
+    } catch {
+      setError('주소 검색 실패. 네트워크를 확인하세요.');
+    } finally {
+      setAddrLoading(false);
+    }
+  }, [addrQuery]);
+
+  const handleAddrSelect = useCallback((item) => {
+    const lng = parseFloat(item.lon);
+    const lat = parseFloat(item.lat);
+    setFlyToLocation({ lng, lat, zoom: 16 });
+    setAddrResults([]);
+    setAddrQuery(item.display_name.split(',')[0]);
+  }, []);
 
   const handleSourceSet = useCallback(({ lng, lat }) => {
     if (drawMode === 'barrier') return;
@@ -230,7 +264,53 @@ export default function SiteAnalysisPage() {
         </SectionCard>
 
         {/* ── STEP 2: 소음원 위치 ── */}
-        <SectionCard step={2} title="소음 발생 위치 (지도 클릭)" active={true}>
+        <SectionCard step={2} title="소음 발생 위치" active={true}>
+          {/* 주소 검색 */}
+          <Box sx={{ position: 'relative', mb: 1.2 }}>
+            <Box sx={{ display: 'flex', gap: 0.8 }}>
+              <TextField
+                size="small" fullWidth
+                placeholder="주소 또는 건물명 검색 (예: 강남구 역삼동)"
+                value={addrQuery}
+                onChange={(e) => setAddrQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddrSearch(); }}
+                InputProps={{
+                  startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment>,
+                }}
+              />
+              <Button
+                variant="contained" size="small" sx={{ px: 1.5, flexShrink: 0, minWidth: 60 }}
+                onClick={handleAddrSearch}
+                disabled={addrLoading || !addrQuery.trim()}
+              >
+                {addrLoading ? <CircularProgress size={16} color="inherit" /> : '검색'}
+              </Button>
+            </Box>
+            {/* 검색 결과 드롭다운 */}
+            {addrResults.length > 0 && (
+              <Paper elevation={4} sx={{
+                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
+                maxHeight: 200, overflowY: 'auto', mt: 0.5, borderRadius: 1.5,
+              }}>
+                <List dense disablePadding>
+                  {addrResults.map((item) => (
+                    <ListItem key={item.place_id} disablePadding divider>
+                      <ListItemButton onClick={() => handleAddrSelect(item)} sx={{ py: 0.8 }}>
+                        <LocationOnIcon sx={{ fontSize: 16, color: '#1565C0', mr: 0.8, flexShrink: 0 }} />
+                        <ListItemText
+                          primary={item.display_name.split(',').slice(0, 2).join(', ')}
+                          secondary={item.display_name.split(',').slice(2, 4).join(', ')}
+                          primaryTypographyProps={{ variant: 'caption', fontWeight: 700, noWrap: true }}
+                          secondaryTypographyProps={{ variant: 'caption', noWrap: true }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  ))}
+                </List>
+              </Paper>
+            )}
+          </Box>
+
           {sourceLocation ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, borderRadius: 1,
               background: '#E8F5E9', border: '1px solid #A5D6A7' }}>
@@ -252,7 +332,8 @@ export default function SiteAnalysisPage() {
             <Box sx={{ p: 1.5, borderRadius: 1, border: '2px dashed #90CAF9',
               textAlign: 'center', background: '#E3F2FD' }}>
               <LocationOnIcon sx={{ color: '#1565C0', fontSize: 28 }} />
-              <Typography variant="body2" color="primary" fontWeight={600}>지도를 클릭하세요</Typography>
+              <Typography variant="body2" color="primary" fontWeight={600}>주소 검색 후 지도를 클릭하세요</Typography>
+              <Typography variant="caption" color="text.secondary">검색으로 위치 이동 → 클릭으로 정확한 현장 지정</Typography>
             </Box>
           )}
           <Box mt={1.2}>
@@ -436,6 +517,7 @@ export default function SiteAnalysisPage() {
           buildingGeoJSON={buildings}
           drawMode={drawMode}
           barrierHeight={barrierHeight}
+          flyToLocation={flyToLocation}
           onSourceSet={handleSourceSet}
           onBarrierComplete={handleBarrierComplete}
           onBuildingSelect={(props) => {
