@@ -49,41 +49,73 @@ export default function MapLibre3D({
     map.on('load', () => {
       /* 건물 fill-extrusion */
       map.addSource('noise-buildings', { type: 'geojson', data: EMPTY });
+
+      /* 안전 건물 (65dB 미만): 회색 반투명 */
+      map.addLayer({
+        id: 'noise-buildings-safe',
+        type: 'fill-extrusion',
+        source: 'noise-buildings',
+        filter: ['!=', ['get', 'exceeds_65db'], 1],
+        paint: {
+          'fill-extrusion-color': '#B0BEC5',
+          'fill-extrusion-height': ['coalesce', ['get', 'height'], 9],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.35,
+        },
+      });
+
+      /* 65dB 초과 건물: 소음도별 색상, 높이 강조 */
       map.addLayer({
         id: 'noise-buildings-fill',
         type: 'fill-extrusion',
         source: 'noise-buildings',
+        filter: ['==', ['get', 'exceeds_65db'], 1],
         paint: {
-          'fill-extrusion-color': ['coalesce', ['get', 'color'], '#90A4AE'],
+          'fill-extrusion-color': ['coalesce', ['get', 'color'], '#FF9800'],
           'fill-extrusion-height': [
             '+',
             ['coalesce', ['get', 'height'], 9],
-            ['*', ['max', ['-', ['coalesce', ['get', 'max_noise_db'], 0], 60], 0], 1.5],
+            ['*', ['max', ['-', ['coalesce', ['get', 'max_noise_db'], 0], 65], 0], 2],
           ],
           'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.85,
+          'fill-extrusion-opacity': 0.92,
         },
       });
 
-      /* 건물 소음 레이블 */
+      /* 65dB 초과 건물 테두리 강조 (2D fill 위에 line) */
+      map.addLayer({
+        id: 'noise-buildings-outline',
+        type: 'fill-extrusion',
+        source: 'noise-buildings',
+        filter: ['==', ['get', 'exceeds_65db'], 1],
+        paint: {
+          'fill-extrusion-color': ['coalesce', ['get', 'color'], '#FF9800'],
+          'fill-extrusion-height': ['+', ['coalesce', ['get', 'height'], 9], 0.5],
+          'fill-extrusion-base': ['+', ['coalesce', ['get', 'height'], 9], 0],
+          'fill-extrusion-opacity': 0.6,
+        },
+      });
+
+      /* 소음 레이블 - 65dB 초과 건물만 표시 */
       map.addLayer({
         id: 'noise-label',
         type: 'symbol',
         source: 'noise-buildings',
+        filter: ['==', ['get', 'exceeds_65db'], 1],
         layout: {
-          'text-field': ['case',
-            ['>', ['coalesce', ['get', 'max_noise_db'], 0], 0],
-            ['concat', ['to-string', ['round', ['get', 'max_noise_db']]], 'dB'],
-            ''],
-          'text-size': 12,
+          'text-field': ['concat',
+            ['to-string', ['round', ['get', 'max_noise_db']]],
+            'dB'],
+          'text-size': 13,
           'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
           'text-anchor': 'center',
           'text-allow-overlap': false,
+          'text-offset': [0, -1],
         },
         paint: {
-          'text-color': ['coalesce', ['get', 'color'], '#37474F'],
-          'text-halo-color': 'rgba(255,255,255,0.95)',
-          'text-halo-width': 2,
+          'text-color': ['coalesce', ['get', 'color'], '#E65100'],
+          'text-halo-color': 'rgba(255,255,255,0.98)',
+          'text-halo-width': 2.5,
         },
       });
 
@@ -147,13 +179,16 @@ export default function MapLibre3D({
       pendingRef.current = {};
     });
 
-    /* 건물 클릭 */
-    map.on('click', 'noise-buildings-fill', (e) => {
-      onBuildingSelect?.(e.features[0]?.properties);
-    });
-    map.on('mouseenter', 'noise-buildings-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'noise-buildings-fill', () => {
-      map.getCanvas().style.cursor = startCoordRef.current ? 'crosshair' : 'grab';
+    /* 건물 클릭 (초과/안전 모두) */
+    const buildingLayers = ['noise-buildings-fill', 'noise-buildings-safe'];
+    buildingLayers.forEach((layer) => {
+      map.on('click', layer, (e) => {
+        onBuildingSelect?.(e.features[0]?.properties);
+      });
+      map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', layer, () => {
+        map.getCanvas().style.cursor = startCoordRef.current ? 'crosshair' : 'grab';
+      });
     });
 
     mapRef.current = map;
