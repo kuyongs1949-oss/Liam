@@ -1,18 +1,40 @@
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.ru/api/interpreter',
+];
+
+async function fetchWithTimeout(url, options, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export async function queryBuildings(lat, lng, radius = 300) {
   const query = `[out:json][timeout:15];(way["building"](around:${radius},${lat},${lng}););out body;>;out skel qt;`;
+  const body = `data=${encodeURIComponent(query)}`;
 
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(query)}`,
-    signal: AbortSignal.timeout(20000),
-  });
-
-  if (!res.ok) throw new Error('건물 데이터 조회 실패');
-  const data = await res.json();
-  return parseOSM(data);
+  let lastError;
+  for (const url of OVERPASS_MIRRORS) {
+    try {
+      const res = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      }, 20000);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return parseOSM(data);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw new Error(`건물 데이터를 가져올 수 없습니다: ${lastError?.message}`);
 }
 
 function parseOSM(data) {
@@ -41,7 +63,7 @@ function parseOSM(data) {
       geometry: { type: 'Polygon', coordinates: [coords] },
       properties: {
         id: String(way.id),
-        name: way.tags?.['name:ko'] || way.tags?.name || `건물`,
+        name: way.tags?.['name:ko'] || way.tags?.name || '건물',
         floors,
         height,
         color: '#90A4AE',
