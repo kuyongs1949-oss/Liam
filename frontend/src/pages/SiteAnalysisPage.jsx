@@ -23,7 +23,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 
 import MapLibre3D from '../components/MapLibre3D';
 import { queryBuildings } from '../services/buildingService';
-import { calculateBuildingNoise, calcSourceToBarrierDist, getEquipments } from '../services/noiseEngine';
+import { calculateBuildingNoise, getEquipments } from '../services/noiseEngine';
 
 const EQUIPMENT_LIST = getEquipments();
 
@@ -74,7 +74,6 @@ export default function SiteAnalysisPage() {
   const [barrierSegments, setBarrierSegments] = useState([]);
   const [barrierHeight, setBarrierHeight] = useState(3);
   const [drawMode, setDrawMode] = useState(null);
-  const [autoD1, setAutoD1] = useState(null);
   const [sufferingMonths, setSufferingMonths] = useState(3);
   const [addrQuery, setAddrQuery] = useState('');
   const [addrResults, setAddrResults] = useState([]);
@@ -89,10 +88,6 @@ export default function SiteAnalysisPage() {
   const lwTotal = useMemo(() => combineLw(equipments), [equipments]);
   const lwColor = lwTotal >= 115 ? '#B388FF' : lwTotal >= 110 ? '#FF4D6D' : lwTotal >= 105 ? '#FF6B35' : C.cyan;
 
-  useEffect(() => {
-    if (!sourceLocation || barrierSegments.length === 0) { setAutoD1(null); return; }
-    setAutoD1(calcSourceToBarrierDist(sourceLocation.lat, sourceLocation.lng, barrierSegments));
-  }, [sourceLocation, barrierSegments]);
 
   const handleAddrSearch = useCallback(async () => {
     const q = addrQuery.trim();
@@ -350,25 +345,28 @@ export default function SiteAnalysisPage() {
               p: 1.2, borderRadius: 1.5,
               background: 'rgba(0,230,118,0.06)', border: '1px solid rgba(0,230,118,0.2)',
             }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.8 }}>
                 <Typography variant="caption" fontWeight={700} sx={{ color: '#00E676' }}>
                   방음벽 {barrierSegments.length}선분 완료
                 </Typography>
                 <Chip size="small" label={`${barrierHeight}m`}
                   sx={{ background: 'rgba(255,179,0,0.15)', color: '#FFB300', border: '1px solid rgba(255,179,0,0.3)', height: 18, fontSize: 10 }} />
               </Box>
-              {autoD1 !== null && sourceLocation && (
-                <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+              <Box sx={{ p: 0.8, borderRadius: 1, background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.1)' }}>
+                <Typography variant="caption" sx={{ color: C.muted, fontSize: 9, letterSpacing: '0.05em' }}>
+                  소음 경로가 방음벽과 교차하는 건물마다
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1.5, mt: 0.4 }}>
                   <Box>
-                    <Typography variant="caption" sx={{ color: C.muted, display: 'block', fontSize: 9 }}>소음원→방음벽 (자동)</Typography>
-                    <Typography variant="body2" fontWeight={800} sx={{ color: '#00E676', fontFamily: 'monospace' }}>d₁ = {autoD1}m</Typography>
+                    <Typography variant="caption" sx={{ color: C.muted, fontSize: 9, display: 'block' }}>소음원 → 방음벽</Typography>
+                    <Typography variant="caption" fontWeight={800} sx={{ color: C.cyan, fontFamily: 'monospace', fontSize: 11 }}>d₁ = 방향별 자동계산</Typography>
                   </Box>
                   <Box>
-                    <Typography variant="caption" sx={{ color: C.muted, display: 'block', fontSize: 9 }}>방음벽→민원인 (건물별)</Typography>
-                    <Typography variant="body2" fontWeight={700} sx={{ color: C.muted, fontFamily: 'monospace' }}>d₂ = 개별계산</Typography>
+                    <Typography variant="caption" sx={{ color: C.muted, fontSize: 9, display: 'block' }}>방음벽 → 민원인</Typography>
+                    <Typography variant="caption" fontWeight={800} sx={{ color: C.cyan, fontFamily: 'monospace', fontSize: 11 }}>d₂ = 방향별 자동계산</Typography>
                   </Box>
                 </Box>
-              )}
+              </Box>
             </Box>
           )}
 
@@ -623,11 +621,11 @@ export default function SiteAnalysisPage() {
             소음도 범례
           </Typography>
           {[
-            ['65dB 미만', 'rgba(180,220,255,0.35)'],
+            ['65dB 미만', '#546E7A'],
             ['65~70dB', '#00E676'],
             ['70~75dB', '#FFB300'],
             ['75~80dB', '#FF6B35'],
-            ['80dB 이상', '#B388FF'],
+            ['80dB 이상', '#FF4D6D'],
           ].map(([l, c]) => (
             <Box key={l} sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 0.4 }}>
               <Box sx={{ width: 10, height: 10, borderRadius: '2px', background: c, boxShadow: c.startsWith('rgba') ? 'none' : `0 0 6px ${c}` }} />
@@ -718,8 +716,12 @@ function ResultList({ results, exceeding, totalComp, sufferingMonths, expandedId
                     <Typography variant="body2" fontWeight={700} noWrap sx={{ color: C.text }}>{r.name || '건물'}</Typography>
                     <Typography variant="caption" sx={{ color: C.muted, fontFamily: 'monospace', fontSize: 10 }}>
                       {r.floors}층 · {r.distance}m
-                      {r.barrier_d1 > 0 && ` · d₁=${r.barrier_d1}m d₂=${r.barrier_d2}m`}
                     </Typography>
+                    {r.barrier_d1 > 0 && (
+                      <Typography variant="caption" sx={{ color: '#00E676', fontFamily: 'monospace', fontSize: 9, display: 'block' }}>
+                        d₁={r.barrier_d1}m · d₂={r.barrier_d2}m
+                      </Typography>
+                    )}
                   </Box>
                   <Box sx={{ textAlign: 'right' }}>
                     <Box sx={{

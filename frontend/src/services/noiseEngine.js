@@ -105,12 +105,11 @@ function classifyNoise(db) {
 }
 
 function getColor(db) {
-  if (db < 65) return '#2196F3';
-  if (db < 70) return '#4CAF50';
-  if (db < 72) return '#FFC107';
-  if (db < 75) return '#FF9800';
-  if (db < 80) return '#F44336';
-  return '#9C27B0';
+  if (db < 65) return '#607D8B';   // 안전 — 회색
+  if (db < 70) return '#00E676';   // 경미 — 네온 그린
+  if (db < 75) return '#FFB300';   // 보통 — 앰버
+  if (db < 80) return '#FF6B35';   // 심각 — 오렌지
+  return '#FF4D6D';                // 매우심각 — 핫핑크
 }
 
 export function quickCalculate({ equipments, d1, barrier_height = 0, barrier_material_loss = 10, d2 }) {

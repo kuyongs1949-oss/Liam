@@ -201,7 +201,7 @@ export default function MapLibre3D({
         paint: {
           'fill-extrusion-color': ['case',
             ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1],
-            ['coalesce', ['get', 'color'], '#FF9800'], '#B0BEC5'],
+            ['coalesce', ['get', 'color'], '#FF6B35'], '#546E7A'],
           'fill-extrusion-height': ['case',
             ['==', ['coalesce', ['get', 'exceeds_65db'], 0], 1],
             ['+', ['coalesce', ['get', 'height'], 9],
