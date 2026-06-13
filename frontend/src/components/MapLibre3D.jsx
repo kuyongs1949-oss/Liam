@@ -21,7 +21,7 @@ export default function MapLibre3D({
   const pendingRef   = useRef({});
   const animRef      = useRef(null);
   const pulseRef     = useRef({ t: 0 });
-  const drawStateRef = useRef({ active: false, startCoord: null });
+  const startCoordRef = useRef(null); // 방음벽 드래그 시작점
 
   /* setSource 헬퍼 */
   const setSource = useCallback((id, data) => {
@@ -89,36 +89,29 @@ export default function MapLibre3D({
       /* 방음벽 확정선 */
       map.addSource('barriers', { type: 'geojson', data: EMPTY });
       map.addLayer({
-        id: 'barriers-casing',
-        type: 'line', source: 'barriers',
+        id: 'barriers-casing', type: 'line', source: 'barriers',
         paint: { 'line-color': '#BF360C', 'line-width': 10, 'line-cap': 'round', 'line-join': 'round', 'line-opacity': 0.3 },
       });
       map.addLayer({
-        id: 'barriers-line',
-        type: 'line', source: 'barriers',
+        id: 'barriers-line', type: 'line', source: 'barriers',
         paint: { 'line-color': '#FF5722', 'line-width': 5, 'line-cap': 'round', 'line-join': 'round' },
       });
 
       /* 방음벽 그리기 미리보기 */
       map.addSource('barrier-preview', { type: 'geojson', data: EMPTY });
       map.addLayer({
-        id: 'barrier-preview-line',
-        type: 'line', source: 'barrier-preview',
-        paint: { 'line-color': '#FF9800', 'line-width': 3, 'line-dasharray': [5, 2], 'line-opacity': 0.9 },
+        id: 'barrier-preview-line', type: 'line', source: 'barrier-preview',
+        paint: { 'line-color': '#FF9800', 'line-width': 4, 'line-dasharray': [5, 2], 'line-opacity': 0.95 },
       });
 
       /* 소음원 파장 (3개 ring) */
       map.addSource('pulse-ring', { type: 'geojson', data: EMPTY });
       for (let i = 0; i < 3; i++) {
         map.addLayer({
-          id: `pulse-ring-${i}`,
-          type: 'circle', source: 'pulse-ring',
+          id: `pulse-ring-${i}`, type: 'circle', source: 'pulse-ring',
           paint: {
-            'circle-radius': 10,
-            'circle-color': 'transparent',
-            'circle-stroke-width': 3,
-            'circle-stroke-color': '#FF5722',
-            'circle-stroke-opacity': 0,
+            'circle-radius': 10, 'circle-color': 'transparent',
+            'circle-stroke-width': 3, 'circle-stroke-color': '#FF5722', 'circle-stroke-opacity': 0,
           },
         });
       }
@@ -159,7 +152,7 @@ export default function MapLibre3D({
     });
     map.on('mouseenter', 'noise-buildings-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'noise-buildings-fill', () => {
-      map.getCanvas().style.cursor = drawStateRef.current.active ? 'crosshair' : 'grab';
+      map.getCanvas().style.cursor = startCoordRef.current ? 'crosshair' : 'grab';
     });
 
     mapRef.current = map;
@@ -176,100 +169,75 @@ export default function MapLibre3D({
     const map = mapRef.current;
     if (!map) return;
     const handler = (e) => {
-      if (drawStateRef.current.active) return; // 방음벽 그리기 중 무시
-      if (drawMode === null || drawMode === 'source') {
-        onSourceSet?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
-      }
+      if (drawMode === 'barrier') return;
+      onSourceSet?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
     };
     map.on('click', handler);
     return () => map.off('click', handler);
   }, [drawMode, onSourceSet]);
 
-  /* ── 방음벽 그리기: 캔버스 DOM 이벤트 ───────────────── */
+  /* ── 방음벽 드래그 그리기 ─────────────────────────────
+   *  핵심: drawMode === 'barrier' 진입 시 즉시 dragPan 비활성화,
+   *  이후 mousedown/mousemove/mouseup 으로 선분 생성
+   * ─────────────────────────────────────────────────── */
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const canvas = map.getCanvas();
+    if (drawMode !== 'barrier') {
+      // 방음벽 모드 아닐 때: dragPan 복원, 프리뷰 삭제
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = 'grab';
+      startCoordRef.current = null;
+      if (loadedRef.current) map.getSource('barrier-preview')?.setData(EMPTY);
+      return;
+    }
 
-    const toLngLat = (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const point = new maplibregl.Point(
-        e.clientX - rect.left,
-        e.clientY - rect.top,
-      );
-      return map.unproject(point);
-    };
+    // 방음벽 모드 진입: 즉시 dragPan 비활성화
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = 'crosshair';
 
     const onMouseDown = (e) => {
-      if (drawMode !== 'barrier') return;
-      e.preventDefault();
-      const ll = toLngLat(e);
-      drawStateRef.current = { active: true, startCoord: [ll.lng, ll.lat] };
-      map.dragPan.disable();
-      canvas.style.cursor = 'crosshair';
+      startCoordRef.current = [e.lngLat.lng, e.lngLat.lat];
     };
 
     const onMouseMove = (e) => {
-      if (!drawStateRef.current.active) return;
-      const ll = toLngLat(e);
-      const end = [ll.lng, ll.lat];
+      if (!startCoordRef.current) return;
+      const end = [e.lngLat.lng, e.lngLat.lat];
       map.getSource('barrier-preview')?.setData({
         type: 'FeatureCollection',
         features: [{
           type: 'Feature',
-          geometry: { type: 'LineString', coordinates: [drawStateRef.current.startCoord, end] },
+          geometry: { type: 'LineString', coordinates: [startCoordRef.current, end] },
           properties: {},
         }],
       });
     };
 
     const onMouseUp = (e) => {
-      if (!drawStateRef.current.active) return;
-      const ll = toLngLat(e);
-      const end = [ll.lng, ll.lat];
-      const { startCoord } = drawStateRef.current;
-
-      drawStateRef.current = { active: false, startCoord: null };
-      map.dragPan.enable();
-      canvas.style.cursor = drawMode === 'barrier' ? 'crosshair' : 'grab';
+      if (!startCoordRef.current) return;
+      const start = startCoordRef.current;
+      const end   = [e.lngLat.lng, e.lngLat.lat];
+      startCoordRef.current = null;
       map.getSource('barrier-preview')?.setData(EMPTY);
 
-      const dist = Math.hypot(startCoord[0] - end[0], startCoord[1] - end[1]);
+      const dist = Math.hypot(start[0] - end[0], start[1] - end[1]);
       if (dist > 0.000005) {
-        onBarrierComplete?.([startCoord, end]);
+        onBarrierComplete?.([start, end]);
       }
     };
 
-    const onMouseLeave = () => {
-      if (drawStateRef.current.active) {
-        drawStateRef.current = { active: false, startCoord: null };
-        map.dragPan.enable();
-        map.getSource('barrier-preview')?.setData(EMPTY);
-      }
-    };
-
-    canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('mousemove', onMouseMove);
-    canvas.addEventListener('mouseup',   onMouseUp);
-    canvas.addEventListener('mouseleave', onMouseLeave);
+    map.on('mousedown', onMouseDown);
+    map.on('mousemove', onMouseMove);
+    map.on('mouseup',   onMouseUp);
 
     return () => {
-      canvas.removeEventListener('mousedown', onMouseDown);
-      canvas.removeEventListener('mousemove', onMouseMove);
-      canvas.removeEventListener('mouseup',   onMouseUp);
-      canvas.removeEventListener('mouseleave', onMouseLeave);
-      map.dragPan.enable();
-      drawStateRef.current = { active: false, startCoord: null };
+      map.off('mousedown', onMouseDown);
+      map.off('mousemove', onMouseMove);
+      map.off('mouseup',   onMouseUp);
+      // 모드 해제 시 정리는 다음 effect 실행에서 처리
     };
   }, [drawMode, onBarrierComplete]);
-
-  /* ── 커서 ────────────────────────────────────────────── */
-  useEffect(() => {
-    if (mapRef.current) {
-      mapRef.current.getCanvas().style.cursor = drawMode === 'barrier' ? 'crosshair' : 'grab';
-    }
-  }, [drawMode]);
 
   /* ── 소음원 위치 + 파장 애니메이션 ──────────────────── */
   useEffect(() => {
@@ -298,23 +266,19 @@ export default function MapLibre3D({
     const PERIOD = 2000;
     const OFFSETS = [0, 667, 1333];
     let lastTs = null;
-
     const animate = (ts) => {
       if (!loadedRef.current || !mapRef.current) return;
       if (!lastTs) lastTs = ts;
       pulseRef.current.t += ts - lastTs;
       lastTs = ts;
-
       OFFSETS.forEach((offset, i) => {
         const phase = ((pulseRef.current.t + offset) % PERIOD) / PERIOD;
         mapRef.current?.setPaintProperty(`pulse-ring-${i}`, 'circle-radius', 10 + phase * 80);
         mapRef.current?.setPaintProperty(`pulse-ring-${i}`, 'circle-stroke-opacity', (1 - phase) * 0.8);
       });
-
       animRef.current = requestAnimationFrame(animate);
     };
     animRef.current = requestAnimationFrame(animate);
-
     return () => cancelAnimationFrame(animRef.current);
   }, [sourceLocation, setSource]);
 
