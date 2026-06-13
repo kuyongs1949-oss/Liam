@@ -216,10 +216,34 @@ function barrierInsertionLoss(d1, d2, Hb, Hs, Hr) {
   return Math.min(10 * Math.log10(3 + 20 * N), 20);
 }
 
+// 선분 위의 최근접점 계산 (lng/lat 좌표 기준)
+function nearestPointOnSegment(P, A, B) {
+  const AB = [B[0] - A[0], B[1] - A[1]];
+  const AP = [P[0] - A[0], P[1] - A[1]];
+  const len2 = AB[0] ** 2 + AB[1] ** 2;
+  if (len2 === 0) return A;
+  const t = Math.max(0, Math.min(1, (AP[0] * AB[0] + AP[1] * AB[1]) / len2));
+  return [A[0] + t * AB[0], A[1] + t * AB[1]];
+}
+
+// 소음원에서 방음벽(여러 선분)까지의 최단 거리 계산
+export function calcSourceToBarrierDist(sourceLat, sourceLng, barrierSegments) {
+  if (!barrierSegments || barrierSegments.length === 0) return 0;
+  const S = [sourceLng, sourceLat];
+  let minDist = Infinity;
+  for (const [B1, B2] of barrierSegments) {
+    const nearest = nearestPointOnSegment(S, B1, B2);
+    const d = haversine(sourceLat, sourceLng, nearest[1], nearest[0]);
+    if (d < minDist) minDist = d;
+  }
+  return +minDist.toFixed(1);
+}
+
 export function calculateFloorNoise({
   lwTotal, sourceLat, sourceLng, receiverLat, receiverLng,
-  floorNum, barrierCoords = [], barrierHeight = 3,
-  barrierD1 = 0, barrierD2 = 0,  // 수동 입력 거리 (0이면 기하학적 계산)
+  floorNum,
+  barrierSegments = [],  // [[[lng,lat],[lng,lat]], ...] 독립 선분 배열
+  barrierHeight = 3,
   sufferingMonths = 3,
 }) {
   const Hs = 1.5;
@@ -232,37 +256,35 @@ export function calculateFloorNoise({
   const Agr = Hr > 6 ? 0 : Math.max(4.8 - (2 * hm / dist) * (17 + 300 / dist), 0);
 
   let Abar = 0;
+  let barrierD1used = 0;
+  let barrierD2used = 0;
 
-  // 수동 d1/d2가 입력된 경우 우선 사용
-  if (barrierD1 > 0 && barrierD2 > 0 && barrierHeight > 0) {
-    // 높이에 따라 방음벽 효과 감소: 수음점이 방음벽보다 높으면 효과 없음
-    if (Hr < barrierHeight + 0.5) {
-      Abar = barrierInsertionLoss(barrierD1, barrierD2, barrierHeight, Hs, Hr);
-    } else {
-      // 방음벽 위로 노출되는 층은 회절 감쇠만 소량 적용
-      const excess = Hr - barrierHeight;
-      Abar = Math.max(0, barrierInsertionLoss(barrierD1, barrierD2, barrierHeight, Hs, Hr) - excess * 2);
-    }
-  } else if (barrierCoords.length >= 2) {
+  // 각 방음벽 선분에 대해 소음원-수음점 직선과 교차 여부 확인
+  if (barrierSegments.length > 0 && barrierHeight > 0) {
     const S = [sourceLng, sourceLat];
     const R = [receiverLng, receiverLat];
-    for (let i = 0; i < barrierCoords.length - 1; i++) {
-      const B1 = barrierCoords[i];
-      const B2 = barrierCoords[i + 1];
-      if (segmentsIntersect(S, R, B1, B2)) {
-        const pt = getIntersectionPoint(S, R, B1, B2);
-        if (pt) {
-          const d1 = Math.max(haversine(sourceLat, sourceLng, pt[1], pt[0]), 1);
-          const d2 = Math.max(haversine(pt[1], pt[0], receiverLat, receiverLng), 1);
-          let loss = 0;
-          if (Hr < barrierHeight + 0.5) {
-            loss = barrierInsertionLoss(d1, d2, barrierHeight, Hs, Hr);
-          } else {
-            const excess = Hr - barrierHeight;
-            loss = Math.max(0, barrierInsertionLoss(d1, d2, barrierHeight, Hs, Hr) - excess * 2);
-          }
-          Abar = Math.max(Abar, loss);
-        }
+
+    for (const [B1, B2] of barrierSegments) {
+      if (!segmentsIntersect(S, R, B1, B2)) continue;
+      const pt = getIntersectionPoint(S, R, B1, B2);
+      if (!pt) continue;
+
+      const d1 = Math.max(haversine(sourceLat, sourceLng, pt[1], pt[0]), 1);
+      const d2 = Math.max(haversine(pt[1], pt[0], receiverLat, receiverLng), 1);
+
+      // 방음벽 높이보다 수음점이 높으면 효과 감소
+      let loss;
+      if (Hr < barrierHeight + 0.5) {
+        loss = barrierInsertionLoss(d1, d2, barrierHeight, Hs, Hr);
+      } else {
+        const excess = Hr - barrierHeight;
+        loss = Math.max(0, barrierInsertionLoss(d1, d2, barrierHeight, Hs, Hr) - excess * 2);
+      }
+
+      if (loss > Abar) {
+        Abar = loss;
+        barrierD1used = +d1.toFixed(1);
+        barrierD2used = +d2.toFixed(1);
       }
     }
   }
@@ -279,6 +301,8 @@ export function calculateFloorNoise({
     A_div: +Adiv.toFixed(1),
     A_gr: +Agr.toFixed(1),
     A_barrier: +Abar.toFixed(1),
+    barrier_d1: barrierD1used,
+    barrier_d2: barrierD2used,
     exceeds_65db: Lrec > 65,
     noise_level: level || 'safe',
     compensation,
@@ -288,8 +312,8 @@ export function calculateFloorNoise({
 
 export function calculateBuildingNoise({
   lwTotal, sourceLat, sourceLng, building,
-  barrierCoords = [], barrierHeight = 3,
-  barrierD1 = 0, barrierD2 = 0,
+  barrierSegments = [],
+  barrierHeight = 3,
   sufferingMonths = 3,
 }) {
   const { centroid_lat, centroid_lng, floors } = building;
@@ -299,8 +323,7 @@ export function calculateBuildingNoise({
     floorResults.push(calculateFloorNoise({
       lwTotal, sourceLat, sourceLng,
       receiverLat: centroid_lat, receiverLng: centroid_lng,
-      floorNum: f, barrierCoords, barrierHeight,
-      barrierD1, barrierD2, sufferingMonths,
+      floorNum: f, barrierSegments, barrierHeight, sufferingMonths,
     }));
   }
 
@@ -308,6 +331,9 @@ export function calculateBuildingNoise({
   const exceeding = floorResults.filter((f) => f.exceeds_65db);
   const totalComp = exceeding.reduce((s, f) => s + f.compensation, 0);
   const dist = haversine(sourceLat, sourceLng, centroid_lat, centroid_lng);
+
+  // 이 건물에 실제 적용된 d1/d2 (1층 기준)
+  const f1 = floorResults[0];
 
   return {
     ...building,
@@ -319,8 +345,9 @@ export function calculateBuildingNoise({
     color: getColor(maxFloor.noise_db),
     exceeding_floors: exceeding.length,
     total_compensation: totalComp,
-    // backward compat
     total_compensation_3m: totalComp,
     noise_level: maxFloor.noise_level || 'safe',
+    barrier_d1: f1?.barrier_d1 || 0,
+    barrier_d2: f1?.barrier_d2 || 0,
   };
 }

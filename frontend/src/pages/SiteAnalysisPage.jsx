@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, Slider,
   TextField, Chip, Divider, CircularProgress, Alert, IconButton,
@@ -17,11 +17,10 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import EditIcon from '@mui/icons-material/Edit';
-import BlockIcon from '@mui/icons-material/Block';
 
 import MapLibre3D from '../components/MapLibre3D';
 import { queryBuildings } from '../services/buildingService';
-import { calculateBuildingNoise, getEquipments } from '../services/noiseEngine';
+import { calculateBuildingNoise, calcSourceToBarrierDist, getEquipments } from '../services/noiseEngine';
 
 const EQUIPMENT_LIST = getEquipments();
 
@@ -66,12 +65,12 @@ export default function SiteAnalysisPage() {
   const [radius, setRadius] = useState(300);
 
   // 방음벽
-  const [useBarrier, setUseBarrier] = useState(false);
+  const [barrierSegments, setBarrierSegments] = useState([]); // [[[lng,lat],[lng,lat]], ...]
   const [barrierHeight, setBarrierHeight] = useState(3);
-  const [barrierD1, setBarrierD1] = useState(10);
-  const [barrierD2, setBarrierD2] = useState(50);
-  const [barrierSegments, setBarrierSegments] = useState([]); // [[start,end],...]
-  const [drawMode, setDrawMode] = useState(null); // null | 'barrier'
+  const [drawMode, setDrawMode] = useState(null);
+
+  // 자동 계산된 d1 (소음원→방음벽)
+  const [autoD1, setAutoD1] = useState(null);
 
   const [sufferingMonths, setSufferingMonths] = useState(3);
 
@@ -84,7 +83,15 @@ export default function SiteAnalysisPage() {
   const lwTotal = useMemo(() => combineLw(equipments), [equipments]);
   const lwColor = lwTotal >= 115 ? '#9C27B0' : lwTotal >= 110 ? '#F44336' : lwTotal >= 105 ? '#FF9800' : '#1565C0';
 
-  const allBarrierCoords = useMemo(() => barrierSegments.flatMap((s) => s), [barrierSegments]);
+  // 소음원 위치 or 방음벽이 바뀌면 d1 자동 계산
+  useEffect(() => {
+    if (!sourceLocation || barrierSegments.length === 0) {
+      setAutoD1(null);
+      return;
+    }
+    const d1 = calcSourceToBarrierDist(sourceLocation.lat, sourceLocation.lng, barrierSegments);
+    setAutoD1(d1);
+  }, [sourceLocation, barrierSegments]);
 
   const handleSourceSet = useCallback(({ lng, lat }) => {
     if (drawMode === 'barrier') return;
@@ -110,20 +117,19 @@ export default function SiteAnalysisPage() {
         setLoading(false);
         return;
       }
+
       const calcResults = geoJSON.features.map((f) =>
         calculateBuildingNoise({
           lwTotal,
           sourceLat: sourceLocation.lat,
           sourceLng: sourceLocation.lng,
           building: f.properties,
-          barrierCoords: useBarrier ? allBarrierCoords : [],
-          barrierHeight: useBarrier ? barrierHeight : 0,
-          barrierD1: useBarrier ? barrierD1 : 0,
-          barrierD2: useBarrier ? barrierD2 : 0,
+          barrierSegments,
+          barrierHeight: barrierSegments.length > 0 ? barrierHeight : 0,
           sufferingMonths,
         })
       );
-      // MapLibre GeoJSON 속성에는 배열/중첩객체 금지 → 렌더링에 필요한 평면 값만 전달
+
       setBuildings({
         ...geoJSON,
         features: geoJSON.features.map((f, i) => {
@@ -156,83 +162,74 @@ export default function SiteAnalysisPage() {
   const exceeding = results.filter((r) => r.exceeds_65db);
   const totalComp = exceeding.reduce((s, r) => s + r.total_compensation, 0);
 
+  // 진행 단계 계산
+  const step = !sourceLocation ? 1 : barrierSegments.length === 0 ? 2 : 3;
+
   return (
     <Box sx={{ display: 'flex', height: 'calc(100vh - 120px)' }}>
 
-      {/* ══ 왼쪽 패널 ══ */}
+      {/* ════════ 왼쪽 패널 ════════ */}
       <Box sx={{
         width: 380, flexShrink: 0, overflowY: 'auto', p: 1.5,
         borderRight: '1px solid #E0E0E0', background: '#F8F9FB',
       }}>
         {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1.5 }}>{error}</Alert>}
 
-        {/* ─ STEP 1: 장비 선택 ─ */}
-        <SectionCard icon="🔊" step={1} title="소음 발생 장비 선택">
-          {/* 장비 목록: 스크롤 가능 영역 */}
-          <Box sx={{
-            maxHeight: 260, overflowY: 'auto', pr: 0.5,
-            display: 'flex', flexDirection: 'column', gap: 1, mb: 1,
-          }}>
+        {/* ── STEP 1: 장비 선택 ── */}
+        <SectionCard step={1} title="소음 발생 장비 선택" active>
+          <Box sx={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1, mb: 1, pr: 0.5 }}>
             {equipments.map((eq, i) => {
               const info = EQUIPMENT_LIST.find((e) => e.id === eq.id);
               const rowLw = info ? +(info.Lw + 10 * Math.log10(Math.max(eq.count, 1))).toFixed(1) : 0;
               return (
-                <Box key={i} sx={{
-                  display: 'flex', gap: 1, alignItems: 'flex-start',
-                  p: 1, borderRadius: 1.5, border: '1px solid #E0E0E0', background: 'white',
-                }}>
-                  <Box sx={{ flex: 1 }}>
-                    <FormControl size="small" fullWidth>
-                      <InputLabel>장비 종류</InputLabel>
-                      <Select value={eq.id} label="장비 종류"
-                        onChange={(e) => setEquipments((p) => p.map((x, j) => j === i ? { ...x, id: e.target.value } : x))}>
-                        {EQUIPMENT_LIST.map((e) => (
-                          <MenuItem key={e.id} value={e.id}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                              <Typography variant="body2">{e.name}</Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>{e.Lw}dB</Typography>
-                            </Box>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Box>
-                  <TextField size="small" type="number" label="대수" sx={{ width: 72 }}
+                <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'center',
+                  p: 1, borderRadius: 1.5, border: '1px solid #E0E0E0', background: 'white' }}>
+                  <FormControl size="small" sx={{ flex: 1 }}>
+                    <InputLabel>장비</InputLabel>
+                    <Select value={eq.id} label="장비"
+                      onChange={(e) => setEquipments((p) => p.map((x, j) => j === i ? { ...x, id: e.target.value } : x))}>
+                      {EQUIPMENT_LIST.map((e) => (
+                        <MenuItem key={e.id} value={e.id}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                            <Typography variant="body2">{e.name}</Typography>
+                            <Typography variant="caption" color="text.secondary">{e.Lw}dB</Typography>
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <TextField size="small" type="number" label="대수" sx={{ width: 68 }}
                     value={eq.count} inputProps={{ min: 1, max: 30 }}
                     onChange={(e) => setEquipments((p) => p.map((x, j) => j === i ? { ...x, count: +e.target.value } : x))} />
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pt: 0.5 }}>
+                  <Box sx={{ textAlign: 'center', minWidth: 44 }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>Lw</Typography>
-                    <Typography variant="caption" fontWeight={700} color={dbColor(rowLw - 60)}>
-                      {rowLw}dB
+                    <Typography variant="caption" fontWeight={700} color={dbColor(rowLw - 55)} display="block">
+                      {rowLw}
                     </Typography>
-                    <IconButton size="small" color="error" disabled={equipments.length === 1}
-                      onClick={() => setEquipments((p) => p.filter((_, j) => j !== i))} sx={{ p: 0.3 }}>
-                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    <IconButton size="small" disabled={equipments.length === 1}
+                      onClick={() => setEquipments((p) => p.filter((_, j) => j !== i))} sx={{ p: 0.2 }}>
+                      <DeleteIcon sx={{ fontSize: 14, color: '#EF5350' }} />
                     </IconButton>
                   </Box>
                 </Box>
               );
             })}
           </Box>
-
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Button size="small" startIcon={<AddIcon />} variant="outlined" fullWidth
               onClick={() => setEquipments((p) => [...p, { id: 'crane', count: 1 }])}>
               장비 추가
             </Button>
             <Box sx={{ px: 1.5, py: 0.8, borderRadius: 2, background: lwColor, color: 'white',
-              textAlign: 'center', minWidth: 110, flexShrink: 0 }}>
-              <Typography variant="caption" sx={{ opacity: 0.85, display: 'block' }}>합산 Lw</Typography>
+              textAlign: 'center', minWidth: 108, flexShrink: 0 }}>
+              <Typography variant="caption" sx={{ opacity: 0.85, display: 'block' }}>합산 음향파워</Typography>
               <Typography variant="h6" fontWeight={800} lineHeight={1.1}>{lwTotal.toFixed(1)} dB</Typography>
             </Box>
           </Box>
         </SectionCard>
 
-        {/* ─ STEP 2: 현장 위치 ─ */}
-        <SectionCard icon={<LocationOnIcon sx={{ fontSize: 15 }} />} step={2} title="공사 현장 위치 선택">
-          <Typography variant="body2" color="text.secondary" mb={1}>
-            오른쪽 지도를 클릭하면 위치가 자동 설정됩니다
-          </Typography>
+        {/* ── STEP 2: 소음원 위치 ── */}
+        <SectionCard step={2} title="소음 발생 위치 (지도 클릭)" active={true}>
           {sourceLocation ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, borderRadius: 1,
               background: '#E8F5E9', border: '1px solid #A5D6A7' }}>
@@ -243,8 +240,10 @@ export default function SiteAnalysisPage() {
                   {sourceLocation.lat.toFixed(5)}, {sourceLocation.lng.toFixed(5)}
                 </Typography>
               </Box>
-              <IconButton size="small"
-                onClick={() => { setSourceLocation(null); setResults([]); setBuildings(null); }}>
+              <IconButton size="small" onClick={() => {
+                setSourceLocation(null); setResults([]); setBuildings(null);
+                setBarrierSegments([]); setAutoD1(null);
+              }}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -255,10 +254,8 @@ export default function SiteAnalysisPage() {
               <Typography variant="body2" color="primary" fontWeight={600}>지도를 클릭하세요</Typography>
             </Box>
           )}
-          <Box mt={1.5}>
-            <Typography variant="caption" color="text.secondary">
-              탐색 반경: <b>{radius}m</b>
-            </Typography>
+          <Box mt={1.2}>
+            <Typography variant="caption" color="text.secondary">탐색 반경: <b>{radius}m</b></Typography>
             <Slider value={radius} min={100} max={600} step={50} size="small"
               marks={[{ value: 100, label: '100m' }, { value: 300, label: '300m' }, { value: 600, label: '600m' }]}
               onChange={(_, v) => { setRadius(v); if (sourceLocation) setSourceLocation((p) => ({ ...p, radius: v })); }}
@@ -266,132 +263,87 @@ export default function SiteAnalysisPage() {
           </Box>
         </SectionCard>
 
-        {/* ─ STEP 3: 방음벽 ─ */}
-        <SectionCard icon={<FenceIcon sx={{ fontSize: 15 }} />} step={3} title="방음벽 설정">
-          {/* 없음/있음 */}
-          <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
-            <Button size="small" fullWidth variant={!useBarrier ? 'contained' : 'outlined'}
-              color={!useBarrier ? 'inherit' : 'inherit'}
-              sx={{ background: !useBarrier ? '#455A64' : undefined, color: !useBarrier ? 'white' : undefined }}
-              startIcon={<BlockIcon />}
-              onClick={() => { setUseBarrier(false); setDrawMode(null); }}>
-              방음벽 없음
-            </Button>
-            <Button size="small" fullWidth variant={useBarrier ? 'contained' : 'outlined'}
-              color={useBarrier ? 'warning' : 'inherit'}
-              startIcon={<FenceIcon />}
-              onClick={() => setUseBarrier(true)}>
-              방음벽 있음
-            </Button>
+        {/* ── STEP 3: 방음벽 ── */}
+        <SectionCard step={3} title="방음벽 그리기 (선택)" active={!!sourceLocation}>
+          {/* 방음벽 높이 */}
+          <Box sx={{ mb: 1.5 }}>
+            <Typography variant="caption" fontWeight={700} color="text.secondary" display="block" mb={0.5}>
+              방음벽 높이
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Slider value={barrierHeight} min={1} max={12} step={0.5} size="small" sx={{ flex: 1 }}
+                onChange={(_, v) => setBarrierHeight(v)}
+                valueLabelDisplay="on" valueLabelFormat={(v) => `${v}m`} />
+              <TextField size="small" type="number" sx={{ width: 80 }}
+                value={barrierHeight} inputProps={{ min: 1, max: 12, step: 0.5 }}
+                InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment> }}
+                onChange={(e) => setBarrierHeight(+e.target.value)} />
+            </Box>
           </Box>
 
-          <Collapse in={useBarrier}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          {/* 펜 그리기 버튼 */}
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+            <Button fullWidth size="small"
+              variant={drawMode === 'barrier' ? 'contained' : 'outlined'}
+              color={drawMode === 'barrier' ? 'warning' : 'inherit'}
+              startIcon={<EditIcon />}
+              disabled={!sourceLocation}
+              onClick={() => setDrawMode(drawMode === 'barrier' ? null : 'barrier')}>
+              {drawMode === 'barrier' ? '그리기 중지' : '펜으로 방음벽 그리기'}
+            </Button>
+            {barrierSegments.length > 0 && (
+              <IconButton size="small" color="error" title="방음벽 모두 삭제"
+                onClick={() => { setBarrierSegments([]); setAutoD1(null); }}>
+                <DeleteIcon />
+              </IconButton>
+            )}
+          </Box>
 
-              {/* 방음벽 높이 */}
-              <Box>
-                <Typography variant="caption" fontWeight={700} color="text.secondary" display="block" mb={0.5}>
-                  방음벽 높이
+          {drawMode === 'barrier' && (
+            <Alert severity="warning" icon={false} sx={{ py: 0.5, mb: 1 }}>
+              <Typography variant="caption">지도에서 <b>클릭 후 드래그</b>하여 방음벽 선을 그리세요</Typography>
+            </Alert>
+          )}
+
+          {/* 자동 계산된 d1 표시 */}
+          {barrierSegments.length > 0 && (
+            <Box sx={{ p: 1.2, borderRadius: 1, background: '#E8F5E9', border: '1px solid #A5D6A7' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="caption" fontWeight={700} color="success.dark">
+                  ✅ 방음벽 {barrierSegments.length}선분 그려짐
                 </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Slider value={barrierHeight} min={1} max={12} step={0.5} size="small" sx={{ flex: 1 }}
-                    onChange={(_, v) => setBarrierHeight(v)}
-                    valueLabelDisplay="on" valueLabelFormat={(v) => `${v}m`} />
-                  <TextField size="small" type="number" sx={{ width: 85 }}
-                    value={barrierHeight} inputProps={{ min: 1, max: 12, step: 0.5 }}
-                    InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment> }}
-                    onChange={(e) => setBarrierHeight(+e.target.value)} />
+                <Chip size="small" label={`높이 ${barrierHeight}m`} color="warning" />
+              </Box>
+              {autoD1 !== null && sourceLocation && (
+                <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">소음원 → 방음벽 (자동계산)</Typography>
+                    <Typography variant="body2" fontWeight={800} color="success.dark">d₁ = {autoD1}m</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">방음벽 → 민원인 (건물별 자동계산)</Typography>
+                    <Typography variant="body2" fontWeight={700} color="text.secondary">d₂ = 건물마다 계산</Typography>
+                  </Box>
                 </Box>
-                <Typography variant="caption" color="warning.dark">
-                  ※ {barrierHeight}m 이하 층 → 차음 효과 적용 / 이상 층 → 효과 감소
-                </Typography>
-              </Box>
-
-              {/* 거리 입력 - 장비→방음벽 */}
-              <Box>
-                <Typography variant="caption" fontWeight={700} color="text.secondary" display="block" mb={0.5}>
-                  장비에서 방음벽까지 거리
-                </Typography>
-                <TextField size="small" type="number" fullWidth value={barrierD1}
-                  inputProps={{ min: 1, max: 500 }}
-                  InputProps={{
-                    endAdornment: <InputAdornment position="end">m</InputAdornment>,
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Typography variant="caption" color="text.secondary">d₁</Typography>
-                      </InputAdornment>
-                    ),
-                  }}
-                  placeholder="예: 10"
-                  onChange={(e) => setBarrierD1(Math.max(1, +e.target.value))} />
-              </Box>
-
-              {/* 거리 입력 - 방음벽→민원인 */}
-              <Box>
-                <Typography variant="caption" fontWeight={700} color="text.secondary" display="block" mb={0.5}>
-                  방음벽에서 민원인까지 거리
-                </Typography>
-                <TextField size="small" type="number" fullWidth value={barrierD2}
-                  inputProps={{ min: 1, max: 500 }}
-                  InputProps={{
-                    endAdornment: <InputAdornment position="end">m</InputAdornment>,
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Typography variant="caption" color="text.secondary">d₂</Typography>
-                      </InputAdornment>
-                    ),
-                  }}
-                  placeholder="예: 50"
-                  onChange={(e) => setBarrierD2(Math.max(1, +e.target.value))} />
-              </Box>
-
-              {/* 방음벽 지도에 그리기 */}
-              <Box>
-                <Typography variant="caption" fontWeight={700} color="text.secondary" display="block" mb={0.5}>
-                  방음벽 위치 (지도에 그리기)
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                  <Button size="small" fullWidth
-                    variant={drawMode === 'barrier' ? 'contained' : 'outlined'}
-                    color={drawMode === 'barrier' ? 'warning' : 'inherit'}
-                    startIcon={<EditIcon />}
-                    onClick={() => setDrawMode(drawMode === 'barrier' ? null : 'barrier')}>
-                    {drawMode === 'barrier' ? '그리기 중지' : '펜으로 그리기'}
-                  </Button>
-                  {barrierSegments.length > 0 && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <Chip size="small" color="warning" label={`${barrierSegments.length}선`} />
-                      <IconButton size="small" color="error" onClick={() => setBarrierSegments([])}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  )}
-                </Box>
-                {drawMode === 'barrier' && (
-                  <Alert severity="warning" icon={false} sx={{ mt: 0.8, py: 0.5 }}>
-                    <Typography variant="caption">
-                      지도에서 <b>클릭 후 드래그</b>하여 방음벽 선을 그리세요
-                    </Typography>
-                  </Alert>
-                )}
-              </Box>
-
-              {/* 방음벽 효과 미리보기 */}
-              <BarrierPreview lwTotal={lwTotal} d1={barrierD1} d2={barrierD2} height={barrierHeight} />
+              )}
             </Box>
-          </Collapse>
+          )}
+
+          {!sourceLocation && (
+            <Typography variant="caption" color="text.disabled">
+              ※ 소음 발생 위치를 먼저 설정하세요
+            </Typography>
+          )}
         </SectionCard>
 
-        {/* ─ STEP 4: 공사 기간 ─ */}
-        <SectionCard icon={<CalendarMonthIcon sx={{ fontSize: 15 }} />} step={4} title="공사 기간 (보상금 산정 기준)">
+        {/* ── STEP 4: 공사 기간 ── */}
+        <SectionCard step={4} title="공사 기간" active={true}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
-            <Box sx={{ flex: 1 }}>
-              <Slider value={sufferingMonths} min={1} max={36} step={1} size="small"
-                marks={[{ value: 1, label: '1개월' }, { value: 12, label: '1년' }, { value: 36, label: '3년' }]}
-                onChange={(_, v) => setSufferingMonths(v)}
-                valueLabelDisplay="on" valueLabelFormat={(v) => `${v}개월`} />
-            </Box>
-            <Box sx={{ width: 72, textAlign: 'center', p: 1, borderRadius: 1,
+            <Slider value={sufferingMonths} min={1} max={36} step={1} size="small" sx={{ flex: 1 }}
+              marks={[{ value: 1, label: '1개월' }, { value: 12, label: '1년' }, { value: 36, label: '3년' }]}
+              onChange={(_, v) => setSufferingMonths(v)}
+              valueLabelDisplay="on" valueLabelFormat={(v) => `${v}개월`} />
+            <Box sx={{ width: 64, textAlign: 'center', p: 0.8, borderRadius: 1,
               background: '#E3F2FD', border: '1px solid #90CAF9', flexShrink: 0 }}>
               <Typography variant="caption" color="primary" display="block">기간</Typography>
               <Typography variant="h6" fontWeight={800} color="primary" lineHeight={1}>{sufferingMonths}</Typography>
@@ -427,7 +379,7 @@ export default function SiteAnalysisPage() {
           </Box>
         </SectionCard>
 
-        {/* ─ 분석 버튼 ─ */}
+        {/* ── 분석 버튼 ── */}
         <Button variant="contained" size="large" fullWidth
           sx={{ fontWeight: 800, fontSize: 15, py: 1.5, borderRadius: 2, my: 0.5 }}
           startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <CalculateIcon />}
@@ -436,7 +388,7 @@ export default function SiteAnalysisPage() {
           {loading ? '주변 건물 분석 중...' : '소음 영향 분석 시작'}
         </Button>
 
-        {/* ─ 결과 ─ */}
+        {/* ── 결과 ── */}
         {results.length > 0 && (
           <ResultList
             results={results} exceeding={exceeding} totalComp={totalComp}
@@ -446,7 +398,7 @@ export default function SiteAnalysisPage() {
         )}
       </Box>
 
-      {/* ══ 오른쪽 지도 ══ */}
+      {/* ════════ 오른쪽 지도 ════════ */}
       <Box sx={{ flex: 1, position: 'relative' }}>
         <MapLibre3D
           sourceLocation={sourceLocation}
@@ -478,14 +430,14 @@ export default function SiteAnalysisPage() {
           ))}
         </Box>
 
-        {/* 안내 오버레이 */}
+        {/* 단계 안내 오버레이 */}
         {drawMode === 'barrier' && (
           <Box sx={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
             background: 'rgba(230,81,0,0.92)', color: 'white', borderRadius: 2, px: 2.5, py: 1,
             boxShadow: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
             <EditIcon sx={{ fontSize: 18 }} />
             <Typography variant="body2" fontWeight={700}>
-              클릭 후 드래그하여 방음벽을 그리세요 — 완료 후 "그리기 중지" 클릭
+              클릭 후 드래그 → 방음벽 그리기 | 완료 후 "그리기 중지" 클릭
             </Typography>
           </Box>
         )}
@@ -494,7 +446,16 @@ export default function SiteAnalysisPage() {
             background: 'rgba(21,101,192,0.9)', color: 'white', borderRadius: 2, px: 2.5, py: 1,
             boxShadow: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
             <LocationOnIcon sx={{ fontSize: 20 }} />
-            <Typography variant="body2" fontWeight={700}>지도를 클릭하여 공사 현장 위치를 선택하세요</Typography>
+            <Typography variant="body2" fontWeight={700}>지도를 클릭하여 소음 발생 위치를 선택하세요</Typography>
+          </Box>
+        )}
+        {sourceLocation && barrierSegments.length === 0 && drawMode !== 'barrier' && step === 2 && (
+          <Box sx={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.65)', color: 'white', borderRadius: 2, px: 2, py: 0.8,
+            boxShadow: 2 }}>
+            <Typography variant="caption" fontWeight={600}>
+              방음벽을 그리거나 (선택) → "소음 영향 분석 시작" 버튼을 누르세요
+            </Typography>
           </Box>
         )}
       </Box>
@@ -502,54 +463,7 @@ export default function SiteAnalysisPage() {
   );
 }
 
-/* ─── 방음벽 효과 미리보기 ─────────────────────────────────── */
-function BarrierPreview({ lwTotal, d1, d2, height }) {
-  const Hs = 1.5;
-  const calcAbar = (Hr) => {
-    const pathOver = Math.sqrt(d1 ** 2 + (height - Hs) ** 2) + Math.sqrt(d2 ** 2 + (height - Hr) ** 2);
-    const pathDirect = Math.sqrt((d1 + d2) ** 2 + (Hs - Hr) ** 2);
-    const delta = pathOver - pathDirect;
-    if (delta <= 0) return 0;
-    const N = (2 * delta) / 0.25;
-    const loss = Math.min(10 * Math.log10(3 + 20 * N), 20);
-    if (Hr < height + 0.5) return +loss.toFixed(1);
-    return +Math.max(0, loss - (Hr - height) * 2).toFixed(1);
-  };
-
-  const totalDist = d1 + d2;
-  const Adiv = 20 * Math.log10(Math.max(totalDist, 1)) + 11;
-  const Aatm = 0.005 * totalDist;
-  const baseNoise = +(lwTotal - Adiv - Aatm).toFixed(1);
-
-  const abar1 = calcAbar(3);
-  const abarH = calcAbar(height + 3);
-  const withBar1 = +(baseNoise - abar1).toFixed(1);
-  const withBarH = +(baseNoise - abarH).toFixed(1);
-
-  return (
-    <Box sx={{ p: 1.2, borderRadius: 1, background: '#FFF8E1', border: '1px solid #FFD54F' }}>
-      <Typography variant="caption" fontWeight={700} color="warning.dark" display="block" mb={1}>
-        📊 방음벽 효과 미리보기 (총 {totalDist}m 거리 기준)
-      </Typography>
-      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0.8, textAlign: 'center' }}>
-        {[
-          { label: '방음벽 없음', db: baseNoise, sub: '기준 소음' },
-          { label: `벽 이하 층`, db: withBar1, sub: `-${abar1}dB` },
-          { label: `벽 이상 층`, db: withBarH, sub: `${height}m 초과` },
-        ].map(({ label, db, sub }) => (
-          <Box key={label} sx={{ p: 0.8, borderRadius: 1, background: dbBg(db),
-            border: `1px solid ${dbColor(db)}33` }}>
-            <Typography sx={{ fontSize: 10, color: 'text.secondary', display: 'block' }}>{label}</Typography>
-            <Typography variant="body2" fontWeight={800} color={dbColor(db)}>{db}dB</Typography>
-            <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>{sub}</Typography>
-          </Box>
-        ))}
-      </Box>
-    </Box>
-  );
-}
-
-/* ─── 결과 목록 ──────────────────────────────────────────── */
+/* ── 결과 목록 ──────────────────────────────────────────── */
 function ResultList({ results, exceeding, totalComp, sufferingMonths, expandedId, onToggle }) {
   return (
     <Box>
@@ -581,14 +495,15 @@ function ResultList({ results, exceeding, totalComp, sufferingMonths, expandedId
             <Box key={r.id}>
               <Box onClick={() => onToggle(r)}
                 sx={{ p: 1, borderRadius: 1.5, cursor: 'pointer',
-                  border: `1.5px solid ${isExpanded ? '#1565C0' : '#E0E0E0'}`,
-                  background: isExpanded ? '#E3F2FD' : 'white',
+                  border: `1.5px solid ${isExpanded ? '#1565C0' : r.exceeds_65db ? c.color + '66' : '#E0E0E0'}`,
+                  background: isExpanded ? '#E3F2FD' : r.exceeds_65db ? c.bg : 'white',
                   '&:hover': { background: '#F5F5F5' } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Box sx={{ flex: 1, mr: 1 }}>
                     <Typography variant="body2" fontWeight={700} noWrap>{r.name || '건물'}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {r.floors}층 · 거리 {r.distance}m
+                      {r.floors}층 · {r.distance}m
+                      {r.barrier_d1 > 0 && ` · d₁=${r.barrier_d1}m d₂=${r.barrier_d2}m`}
                     </Typography>
                   </Box>
                   <Box sx={{ textAlign: 'right' }}>
@@ -634,9 +549,9 @@ function ResultList({ results, exceeding, totalComp, sufferingMonths, expandedId
   );
 }
 
-/* ─── 층별 소음 테이블 ──────────────────────────────────── */
+/* ── 층별 소음 테이블 ───────────────────────────────────── */
 function FloorTable({ building, sufferingMonths }) {
-  const { floor_results = [], total_compensation, floors, distance, name } = building;
+  const { floor_results = [], total_compensation, floors, distance, name, barrier_d1, barrier_d2 } = building;
   const exceeding = floor_results.filter((f) => f.exceeds_65db);
 
   return (
@@ -649,8 +564,13 @@ function FloorTable({ building, sufferingMonths }) {
         </Box>
         <Typography variant="caption" sx={{ opacity: 0.9 }}>초과 {exceeding.length}/{floors}층</Typography>
       </Box>
-      <Box sx={{ px: 1.5, py: 0.6, background: '#E3F2FD', display: 'flex', justifyContent: 'space-between' }}>
-        <Typography variant="caption">{distance}m · {floors}층 건물</Typography>
+      <Box sx={{ px: 1.5, py: 0.6, background: '#E3F2FD', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
+        <Typography variant="caption">{distance}m · {floors}층</Typography>
+        {barrier_d1 > 0 && (
+          <Typography variant="caption" color="success.dark">
+            방음벽 d₁={barrier_d1}m / d₂={barrier_d2}m
+          </Typography>
+        )}
         <Typography variant="caption" fontWeight={700} color="error.main">
           {sufferingMonths}개월 총 ₩{total_compensation.toLocaleString()}
         </Typography>
@@ -671,8 +591,7 @@ function FloorTable({ building, sufferingMonths }) {
               const c = COMP_MAP[f.noise_level] || COMP_MAP.safe;
               return (
                 <TableRow key={f.floor}
-                  sx={{ background: f.exceeds_65db ? c.bg : 'transparent',
-                    '& td': { py: 0.4, fontSize: 11 } }}>
+                  sx={{ background: f.exceeds_65db ? c.bg : 'transparent', '& td': { py: 0.4, fontSize: 11 } }}>
                   <TableCell sx={{ fontWeight: 600 }}>{f.floor}층</TableCell>
                   <TableCell>{f.height_m}m</TableCell>
                   <TableCell>
@@ -707,13 +626,18 @@ function FloorTable({ building, sufferingMonths }) {
   );
 }
 
-/* ─── 섹션 카드 래퍼 ────────────────────────────────────── */
-function SectionCard({ icon, step, title, children }) {
+/* ── 섹션 카드 ──────────────────────────────────────────── */
+function SectionCard({ step, title, active, children }) {
   return (
-    <Card elevation={0} sx={{ border: '1px solid #E0E0E0', borderRadius: 2, mb: 1.5 }}>
+    <Card elevation={0} sx={{
+      border: `1px solid ${active ? '#E0E0E0' : '#EEEEEE'}`,
+      borderRadius: 2, mb: 1.5,
+      opacity: active ? 1 : 0.6,
+    }}>
       <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.2 }}>
-          <Box sx={{ width: 24, height: 24, borderRadius: '50%', background: '#1565C0',
+          <Box sx={{ width: 24, height: 24, borderRadius: '50%',
+            background: active ? '#1565C0' : '#90A4AE',
             color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{step}</Box>
           <Typography variant="subtitle2" fontWeight={700}>{title}</Typography>
