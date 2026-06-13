@@ -5,15 +5,15 @@ import CalculationPage from './pages/CalculationPage';
 
 const theme = createTheme({
   palette: {
-    mode: 'dark',
-    primary:    { main: '#00D4FF' },
-    secondary:  { main: '#FF6B35' },
-    error:      { main: '#FF4D6D' },
-    warning:    { main: '#FFB300' },
-    success:    { main: '#00E676' },
-    background: { default: '#03071E', paper: '#0A1628' },
-    text:       { primary: '#E0F4FF', secondary: 'rgba(180,220,255,0.55)' },
-    divider:    'rgba(0,212,255,0.1)',
+    mode: 'light',
+    primary:    { main: '#16A34A', light: '#4ADE80', dark: '#15803D', contrastText: '#fff' },
+    secondary:  { main: '#0EA5E9', light: '#38BDF8', dark: '#0284C7', contrastText: '#fff' },
+    error:      { main: '#EF4444' },
+    warning:    { main: '#F59E0B' },
+    success:    { main: '#16A34A' },
+    background: { default: '#F0FDF4', paper: '#FFFFFF' },
+    text:       { primary: '#14532D', secondary: '#4B7A56' },
+    divider:    '#BBF7D0',
   },
   typography: {
     fontFamily: '"Noto Sans KR", "Inter", "Roboto", sans-serif',
@@ -26,88 +26,98 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 12,
-          background: 'rgba(10,28,52,0.85)',
-          border: '1px solid rgba(0,212,255,0.1)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-          backdropFilter: 'blur(12px)',
+          background: '#FFFFFF',
+          border: '1px solid #D1FAE5',
+          boxShadow: '0 2px 12px rgba(22,163,74,0.07)',
         },
       },
     },
     MuiPaper: {
       styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-        },
+        root: { backgroundImage: 'none' },
       },
     },
     MuiButton: {
       styleOverrides: {
         containedPrimary: {
-          background: 'linear-gradient(135deg, #0099CC 0%, #00D4FF 100%)',
-          boxShadow: '0 0 20px rgba(0,212,255,0.35)',
+          background: 'linear-gradient(135deg, #16A34A 0%, #22C55E 100%)',
+          boxShadow: '0 4px 14px rgba(22,163,74,0.3)',
           fontWeight: 700,
           '&:hover': {
-            background: 'linear-gradient(135deg, #00B8E6 0%, #33DDFF 100%)',
-            boxShadow: '0 0 28px rgba(0,212,255,0.55)',
+            background: 'linear-gradient(135deg, #15803D 0%, #16A34A 100%)',
+            boxShadow: '0 6px 20px rgba(22,163,74,0.4)',
           },
+        },
+        containedSecondary: {
+          background: 'linear-gradient(135deg, #0EA5E9 0%, #38BDF8 100%)',
+          boxShadow: '0 4px 14px rgba(14,165,233,0.3)',
+          fontWeight: 700,
+        },
+        outlinedPrimary: {
+          borderColor: '#86EFAC',
+          color: '#16A34A',
+          '&:hover': { background: '#F0FDF4', borderColor: '#16A34A' },
         },
       },
     },
     MuiSlider: {
       styleOverrides: {
-        root: { color: '#00D4FF' },
-        track: { boxShadow: '0 0 8px rgba(0,212,255,0.5)' },
+        root:  { color: '#16A34A' },
+        track: { boxShadow: '0 0 6px rgba(22,163,74,0.35)' },
         thumb: {
-          boxShadow: '0 0 10px rgba(0,212,255,0.6)',
-          '&:hover': { boxShadow: '0 0 16px rgba(0,212,255,0.8)' },
+          background: '#fff',
+          border: '2px solid #16A34A',
+          boxShadow: '0 2px 8px rgba(22,163,74,0.3)',
+          '&:hover': { boxShadow: '0 2px 14px rgba(22,163,74,0.45)' },
         },
-        markLabel: { color: 'rgba(180,220,255,0.5)', fontSize: 10 },
+        markLabel: { color: '#6B8F71', fontSize: 10 },
       },
     },
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          background: 'rgba(0,212,255,0.04)',
-          '& fieldset': { borderColor: 'rgba(0,212,255,0.18)' },
-          '&:hover fieldset': { borderColor: 'rgba(0,212,255,0.4)' },
-          '&.Mui-focused fieldset': { borderColor: '#00D4FF', boxShadow: '0 0 0 2px rgba(0,212,255,0.15)' },
+          background: '#FAFFFE',
+          '& fieldset': { borderColor: '#BBF7D0' },
+          '&:hover fieldset': { borderColor: '#4ADE80' },
+          '&.Mui-focused fieldset': { borderColor: '#16A34A', borderWidth: 2 },
         },
       },
     },
     MuiInputLabel: {
       styleOverrides: {
-        root: { color: 'rgba(180,220,255,0.5)', '&.Mui-focused': { color: '#00D4FF' } },
+        root: { color: '#6B8F71', '&.Mui-focused': { color: '#16A34A' } },
       },
     },
     MuiSelect: {
       styleOverrides: {
-        icon: { color: 'rgba(0,212,255,0.5)' },
+        icon: { color: '#6B8F71' },
       },
     },
     MuiMenuItem: {
       styleOverrides: {
         root: {
-          '&:hover': { background: 'rgba(0,212,255,0.08)' },
-          '&.Mui-selected': { background: 'rgba(0,212,255,0.12)' },
+          '&:hover': { background: '#F0FDF4' },
+          '&.Mui-selected': { background: '#DCFCE7' },
         },
       },
     },
     MuiAlert: {
       styleOverrides: {
-        standardError:   { background: 'rgba(255,77,109,0.12)', border: '1px solid rgba(255,77,109,0.3)' },
-        standardWarning: { background: 'rgba(255,179,0,0.1)',   border: '1px solid rgba(255,179,0,0.25)' },
-        standardSuccess: { background: 'rgba(0,230,118,0.1)',   border: '1px solid rgba(0,230,118,0.25)' },
-        standardInfo:    { background: 'rgba(0,212,255,0.08)',  border: '1px solid rgba(0,212,255,0.2)' },
+        standardError:   { background: '#FEF2F2', border: '1px solid #FECACA' },
+        standardWarning: { background: '#FFFBEB', border: '1px solid #FDE68A' },
+        standardSuccess: { background: '#F0FDF4', border: '1px solid #BBF7D0' },
+        standardInfo:    { background: '#F0F9FF', border: '1px solid #BAE6FD' },
       },
     },
     MuiLinearProgress: {
       styleOverrides: {
-        root: { background: 'rgba(255,255,255,0.06)', borderRadius: 4 },
+        root: { background: '#E7F7EC', borderRadius: 4, height: 6 },
+        bar:  { borderRadius: 4 },
       },
     },
     MuiDivider: {
       styleOverrides: {
-        root: { borderColor: 'rgba(0,212,255,0.1)' },
+        root: { borderColor: '#D1FAE5' },
       },
     },
     MuiChip: {
@@ -119,10 +129,11 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           '& .MuiTableCell-root': {
-            background: 'rgba(0,212,255,0.06)',
-            borderBottom: '1px solid rgba(0,212,255,0.15)',
-            color: '#00D4FF',
+            background: '#F0FDF4',
+            borderBottom: '2px solid #BBF7D0',
+            color: '#15803D',
             fontWeight: 700,
+            fontSize: 12,
           },
         },
       },
@@ -130,13 +141,13 @@ const theme = createTheme({
     MuiTableRow: {
       styleOverrides: {
         root: {
-          '&:hover .MuiTableCell-root': { background: 'rgba(0,212,255,0.04)' },
+          '&:hover .MuiTableCell-root': { background: '#F0FDF4' },
         },
       },
     },
     MuiTableCell: {
       styleOverrides: {
-        root: { borderBottom: '1px solid rgba(0,212,255,0.06)' },
+        root: { borderBottom: '1px solid #ECFDF5' },
       },
     },
   },

@@ -13,21 +13,21 @@ import ShieldIcon from '@mui/icons-material/Shield';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 
 const C = {
-  bg:     '#030B18',
-  card:   'rgba(8,22,42,0.9)',
-  border: 'rgba(0,212,255,0.1)',
-  borderHi: 'rgba(0,212,255,0.28)',
-  cyan:   '#00D4FF',
-  text:   '#E0F4FF',
-  muted:  'rgba(180,220,255,0.45)',
+  bg:     '#FFFFFF',
+  card:   '#FFFFFF',
+  border: '#D1FAE5',
+  borderHi: '#86EFAC',
+  cyan:   '#0EA5E9',
+  text:   '#14532D',
+  muted:  '#6B7280',
 };
 
 const LEVEL_CONFIG = {
-  safe:   { label: '안전',    color: C.muted,   glow: 'transparent',          bg: 'rgba(180,220,255,0.04)' },
-  level1: { label: '경미',    color: '#00E676',  glow: 'rgba(0,230,118,0.2)',  bg: 'rgba(0,230,118,0.06)' },
-  level2: { label: '보통',    color: '#FFB300',  glow: 'rgba(255,179,0,0.2)',  bg: 'rgba(255,179,0,0.06)' },
-  level3: { label: '심각',    color: '#FF6B35',  glow: 'rgba(255,107,53,0.2)', bg: 'rgba(255,107,53,0.06)' },
-  level4: { label: '매우심각', color: '#B388FF',  glow: 'rgba(179,136,255,0.2)',bg: 'rgba(179,136,255,0.06)' },
+  safe:   { label: '안전',    color: '#6B7280',  glow: 'transparent',           bg: '#F9FAFB' },
+  level1: { label: '경미',    color: '#16A34A',  glow: 'rgba(22,163,74,0.15)',  bg: '#DCFCE7' },
+  level2: { label: '보통',    color: '#D97706',  glow: 'rgba(217,119,6,0.15)',  bg: '#FEF3C7' },
+  level3: { label: '심각',    color: '#EA580C',  glow: 'rgba(234,88,12,0.15)',  bg: '#FFF7ED' },
+  level4: { label: '매우심각', color: '#DC2626',  glow: 'rgba(220,38,38,0.15)', bg: '#FEF2F2' },
 };
 
 function StatCard({ icon, label, value, color, sub }) {
@@ -69,14 +69,14 @@ export default function CompensationTable() {
         borderRadius: 2, overflow: 'hidden',
         border: `1px solid ${C.border}`,
         background: C.card,
-        backdropFilter: 'blur(12px)',
+        boxShadow: '0 2px 12px rgba(22,163,74,0.07)',
       }}>
         <Box sx={{
           px: 2, py: 1.2,
-          background: 'linear-gradient(90deg, rgba(0,212,255,0.1), transparent)',
+          background: 'linear-gradient(90deg, #F0FDF4, #FAFFFE)',
           borderBottom: `1px solid ${C.border}`,
         }}>
-          <Typography variant="subtitle2" sx={{ color: C.cyan, letterSpacing: '0.06em', fontSize: 12 }}>
+          <Typography variant="subtitle2" sx={{ color: '#15803D', letterSpacing: '0.06em', fontSize: 12 }}>
             간편 계산 결과
           </Typography>
         </Box>
@@ -128,8 +128,7 @@ export default function CompensationTable() {
           </Typography>
           <Typography sx={{
             fontSize: 28, fontWeight: 900, fontFamily: 'monospace',
-            color: cp.noise_level === 'safe' ? C.muted : '#FF4D6D',
-            textShadow: cp.noise_level === 'safe' ? 'none' : '0 0 16px rgba(255,77,109,0.4)',
+            color: cp.noise_level === 'safe' ? C.muted : '#DC2626',
           }}>
             ₩{cp.per_household_3months?.toLocaleString('ko-KR') || '0'}
           </Typography>
@@ -144,12 +143,13 @@ export default function CompensationTable() {
     return (
       <Box sx={{
         borderRadius: 2, border: `1px solid ${C.border}`,
-        background: C.card, backdropFilter: 'blur(12px)',
+        background: '#FAFFFE',
         textAlign: 'center', py: 6,
+        boxShadow: '0 2px 12px rgba(22,163,74,0.05)',
       }}>
         <Box sx={{
           width: 56, height: 56, borderRadius: '14px', mx: 'auto', mb: 2,
-          background: 'rgba(0,212,255,0.06)', border: `1px solid ${C.borderHi}`,
+          background: '#DCFCE7', border: `1px solid ${C.borderHi}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Typography sx={{ fontSize: 24 }}>📋</Typography>
@@ -198,16 +198,17 @@ export default function CompensationTable() {
         <Box sx={{
           borderRadius: 2, overflow: 'hidden',
           border: `1px solid ${C.border}`,
-          background: C.card, backdropFilter: 'blur(12px)',
+          background: C.card,
+          boxShadow: '0 2px 12px rgba(22,163,74,0.07)',
         }}>
           <Box sx={{
             px: 2, py: 1.2,
-            background: 'linear-gradient(90deg, rgba(255,77,109,0.1), transparent)',
-            borderBottom: `1px solid ${C.border}`,
+            background: 'linear-gradient(90deg, #FEF2F2, #FFFBFB)',
+            borderBottom: `1px solid #FECACA`,
             display: 'flex', alignItems: 'center', gap: 1,
           }}>
-            <WarningAmberIcon sx={{ fontSize: 16, color: '#FF4D6D' }} />
-            <Typography variant="subtitle2" sx={{ color: '#FF4D6D', letterSpacing: '0.04em', fontSize: 12 }}>
+            <WarningAmberIcon sx={{ fontSize: 16, color: '#DC2626' }} />
+            <Typography variant="subtitle2" sx={{ color: '#DC2626', letterSpacing: '0.04em', fontSize: 12 }}>
               65dB 초과 세대 보상금 ({results.length}건)
             </Typography>
           </Box>
@@ -223,7 +224,7 @@ export default function CompensationTable() {
                       active={sortBy === 'noise_db'}
                       direction={sortBy === 'noise_db' ? sortDir : 'asc'}
                       onClick={() => handleSort('noise_db')}
-                      sx={{ color: `${C.cyan} !important`, '& .MuiTableSortLabel-icon': { color: `${C.cyan} !important` } }}
+                      sx={{ color: '#15803D !important', '& .MuiTableSortLabel-icon': { color: '#15803D !important' } }}
                     >소음도</TableSortLabel>
                   </TableCell>
                   <TableCell>등급</TableCell>
@@ -232,7 +233,7 @@ export default function CompensationTable() {
                       active={sortBy === 'distance'}
                       direction={sortBy === 'distance' ? sortDir : 'asc'}
                       onClick={() => handleSort('distance')}
-                      sx={{ color: `${C.cyan} !important`, '& .MuiTableSortLabel-icon': { color: `${C.cyan} !important` } }}
+                      sx={{ color: '#15803D !important', '& .MuiTableSortLabel-icon': { color: '#15803D !important' } }}
                     >거리</TableSortLabel>
                   </TableCell>
                   <TableCell>세대당 보상</TableCell>
@@ -241,7 +242,7 @@ export default function CompensationTable() {
                       active={sortBy === 'total'}
                       direction={sortBy === 'total' ? sortDir : 'asc'}
                       onClick={() => handleSort('total')}
-                      sx={{ color: `${C.cyan} !important`, '& .MuiTableSortLabel-icon': { color: `${C.cyan} !important` } }}
+                      sx={{ color: '#15803D !important', '& .MuiTableSortLabel-icon': { color: '#15803D !important' } }}
                     >총 보상금</TableSortLabel>
                   </TableCell>
                 </TableRow>
@@ -260,7 +261,7 @@ export default function CompensationTable() {
                         <Typography variant="caption" sx={{ color: C.muted }}>{r.compensation.households}세대</Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography fontWeight={800} sx={{ color: lvl.color, fontFamily: 'monospace', textShadow: `0 0 8px ${lvl.color}55` }}>
+                        <Typography fontWeight={800} sx={{ color: lvl.color, fontFamily: 'monospace' }}>
                           {r.noise_db.toFixed(1)} dB
                         </Typography>
                       </TableCell>
@@ -280,7 +281,7 @@ export default function CompensationTable() {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography fontWeight={800} sx={{ color: '#FF4D6D', fontFamily: 'monospace', textShadow: '0 0 8px rgba(255,77,109,0.4)' }}>
+                        <Typography fontWeight={800} sx={{ color: '#DC2626', fontFamily: 'monospace' }}>
                           ₩{r.compensation.total.toLocaleString()}
                         </Typography>
                       </TableCell>
@@ -288,16 +289,13 @@ export default function CompensationTable() {
                   );
                 })}
                 {/* 합계 행 */}
-                <TableRow sx={{ '& .MuiTableCell-root': { background: 'rgba(255,179,0,0.06)', borderTop: '1px solid rgba(255,179,0,0.2)' } }}>
+                <TableRow sx={{ '& .MuiTableCell-root': { background: '#FEF3C7', borderTop: '2px solid #FDE68A' } }}>
                   <TableCell colSpan={5}>
-                    <Typography fontWeight={700} sx={{ color: '#FFB300', fontSize: 12, letterSpacing: '0.06em' }}>합계</Typography>
+                    <Typography fontWeight={700} sx={{ color: '#D97706', fontSize: 12, letterSpacing: '0.06em' }}>합계</Typography>
                   </TableCell>
                   <TableCell />
                   <TableCell>
-                    <Typography fontWeight={900} sx={{
-                      color: '#FF4D6D', fontFamily: 'monospace', fontSize: 15,
-                      textShadow: '0 0 12px rgba(255,77,109,0.5)',
-                    }}>
+                    <Typography fontWeight={900} sx={{ color: '#DC2626', fontFamily: 'monospace', fontSize: 15 }}>
                       ₩{summary.total_compensation.toLocaleString()}
                     </Typography>
                   </TableCell>
