@@ -1,0 +1,38 @@
+{
+  "version": "2024",
+  "source": "환경분쟁조정위원회",
+  "standards": [
+    {
+      "level": "level1",
+      "range": "65~70dB",
+      "base_monthly": 300000,
+      "coefficient": 0.5,
+      "description": "생활 방해 (경미)",
+      "color": "#FFC107"
+    },
+    {
+      "level": "level2",
+      "range": "70~75dB",
+      "base_monthly": 600000,
+      "coefficient": 1.0,
+      "description": "생활 방해 (보통)",
+      "color": "#FF9800"
+    },
+    {
+      "level": "level3",
+      "range": "75~80dB",
+      "base_monthly": 1000000,
+      "coefficient": 1.5,
+      "description": "생활 방해 (심각)",
+      "color": "#F44336"
+    },
+    {
+      "level": "level4",
+      "range": "80dB 이상",
+      "base_monthly": 1200000,
+      "coefficient": 2.0,
+      "description": "생활 방해 (매우 심각)",
+      "color": "#9C27B0"
+    }
+  ]
+}
