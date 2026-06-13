@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? 'http://localhost:3001/api' : 'https://noise-backend.onrender.com/api');
+  (import.meta.env.DEV ? 'http://localhost:3001/api' : 'https://noise-backend-2ucp.onrender.com/api');
 
 const api = axios.create({
   baseURL: BASE_URL,
