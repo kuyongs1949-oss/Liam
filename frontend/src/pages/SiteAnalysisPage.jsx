@@ -266,10 +266,11 @@ export default function SiteAnalysisPage() {
         </Button>
       </Box>
 
-      {/* ══════ 왼쪽 사이드 패널 ══════ */}
+      {/* ══════ 왼쪽 사이드 패널 (절대 위치 — 지도 위에 띄움) ══════ */}
       <Box sx={{
-        position: 'relative', zIndex: 10,
-        width: panelOpen ? 376 : 0, flexShrink: 0,
+        position: 'absolute', top: 0, left: 0, bottom: 0,
+        zIndex: 10,
+        width: panelOpen ? 376 : 0,
         overflow: 'hidden', transition: 'width 0.25s ease',
       }}>
         <Box sx={{
