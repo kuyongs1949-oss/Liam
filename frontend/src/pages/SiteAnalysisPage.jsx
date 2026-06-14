@@ -384,52 +384,63 @@ export default function SiteAnalysisPage() {
           </GoogleSection>
 
           {/* 3. 방음벽 */}
-          <GoogleSection icon={<ShieldIcon sx={{ fontSize: 18, color: '#C5221F' }} />} title="방음벽 설정" required={!barrierSegments.length}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, flexShrink: 0 }}>높이</Typography>
-              <Slider value={barrierHeight} min={1} max={12} step={0.5} sx={{ flex: 1 }}
-                onChange={(_, v) => setBarrierHeight(v)}
-                valueLabelDisplay="on" valueLabelFormat={(v) => `${v}m`} />
-              <TextField size="small" type="number" sx={{ width: 72 }}
-                value={barrierHeight} inputProps={{ min: 1, max: 12, step: 0.5 }}
-                InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment>,
-                  sx: { borderRadius: 2 } }}
-                onChange={(e) => setBarrierHeight(+e.target.value)} />
-            </Box>
+          <GoogleSection icon={<ShieldIcon sx={{ fontSize: 18, color: '#1A73E8' }} />} title="방음벽 설정">
 
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button fullWidth size="small"
-                variant={drawMode === 'barrier' ? 'contained' : 'outlined'}
-                color={drawMode === 'barrier' ? 'warning' : 'primary'}
-                startIcon={<EditIcon sx={{ fontSize: 14 }} />}
-                disabled={!sourceLocation}
-                onClick={() => setDrawMode(drawMode === 'barrier' ? null : 'barrier')}
-                sx={{ borderRadius: 20, fontSize: 12 }}>
-                {drawMode === 'barrier' ? '그리기 중지' : '펜으로 그리기'}
-              </Button>
-              {barrierSegments.length > 0 && (
-                <Button size="small" color="error" variant="text"
-                  onClick={() => setBarrierSegments([])} sx={{ flexShrink: 0, borderRadius: 20, fontSize: 12 }}>
-                  삭제
-                </Button>
-              )}
-            </Box>
-
-            {barrierSegments.length > 0 && (
-              <Box sx={{ mt: 1.5, p: 1.2, borderRadius: 2, background: '#E8F0FE' }}>
-                <Typography variant="caption" fontWeight={600} color="primary" display="block" mb={0.5}>
-                  방음벽 {barrierSegments.length}선분 — ISO 9613-2 경로차 감쇠
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 3 }}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: 10 }}>소음원 → 방음벽</Typography>
-                    <Typography variant="caption" fontWeight={700} color="primary">d₁ = 건물별 자동</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: 10 }}>방음벽 → 수음점</Typography>
-                    <Typography variant="caption" fontWeight={700} color="primary">d₂ = 건물별 자동</Typography>
-                  </Box>
+            {barrierSegments.length === 0 ? (
+              /* ── 미설정 상태: 그리기 유도 ── */
+              <Box>
+                <Box sx={{ p: 2, borderRadius: 2, background: '#FFF8F7', border: '1.5px dashed #EA4335', textAlign: 'center', mb: 1.5 }}>
+                  <ShieldIcon sx={{ fontSize: 32, color: '#EA4335', mb: 0.5 }} />
+                  <Typography variant="body2" fontWeight={600} color="error" display="block">방음벽을 반드시 그려야 합니다</Typography>
+                  <Typography variant="caption" color="text.secondary">소음원 위치 설정 후 펜으로 방음벽 위치를 그려주세요</Typography>
                 </Box>
+                <Button fullWidth variant="contained" color="error" size="medium"
+                  startIcon={<EditIcon />}
+                  disabled={!sourceLocation}
+                  onClick={() => setDrawMode('barrier')}
+                  sx={{ borderRadius: 20, fontWeight: 600 }}>
+                  방음벽 그리기 시작
+                </Button>
+              </Box>
+            ) : (
+              /* ── 설정 완료 상태 ── */
+              <Box>
+                <Box sx={{ p: 1.2, borderRadius: 2, background: '#E8F0FE', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CheckCircleIcon sx={{ fontSize: 18, color: '#0F9D58' }} />
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="caption" fontWeight={700} color="secondary" display="block">
+                      방음벽 {barrierSegments.length}선분 설정 완료
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
+                      d₁ / d₂ 건물별 자동 계산 (ISO 9613-2)
+                    </Typography>
+                  </Box>
+                  <Button size="small" color="error" variant="text"
+                    onClick={() => { setBarrierSegments([]); setDrawMode(null); }}
+                    sx={{ flexShrink: 0, borderRadius: 20, fontSize: 11, minWidth: 0, px: 1 }}>
+                    다시 그리기
+                  </Button>
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, flexShrink: 0 }}>높이</Typography>
+                  <Slider value={barrierHeight} min={1} max={12} step={0.5} sx={{ flex: 1 }}
+                    onChange={(_, v) => setBarrierHeight(v)}
+                    valueLabelDisplay="on" valueLabelFormat={(v) => `${v}m`} />
+                  <TextField size="small" type="number" sx={{ width: 72 }}
+                    value={barrierHeight} inputProps={{ min: 1, max: 12, step: 0.5 }}
+                    InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment>, sx: { borderRadius: 2 } }}
+                    onChange={(e) => setBarrierHeight(+e.target.value)} />
+                </Box>
+
+                <Button fullWidth size="small"
+                  variant={drawMode === 'barrier' ? 'contained' : 'outlined'}
+                  color={drawMode === 'barrier' ? 'warning' : 'primary'}
+                  startIcon={<EditIcon sx={{ fontSize: 14 }} />}
+                  onClick={() => setDrawMode(drawMode === 'barrier' ? null : 'barrier')}
+                  sx={{ borderRadius: 20, fontSize: 12 }}>
+                  {drawMode === 'barrier' ? '그리기 중지' : '선분 추가'}
+                </Button>
               </Box>
             )}
           </GoogleSection>
@@ -489,14 +500,6 @@ export default function SiteAnalysisPage() {
                 boxShadow: '0 2px 6px rgba(26,115,232,0.4)' }}>
               {loading ? '분석 중...' : '소음 영향 분석'}
             </Button>
-            {sourceLocation && !barrierSegments.length && (
-              <Box sx={{ mt: 1, p: 1.2, borderRadius: 2, background: '#FCE8E6', display: 'flex', alignItems: 'center', gap: 1 }}>
-                <ShieldIcon sx={{ fontSize: 16, color: '#C5221F', flexShrink: 0 }} />
-                <Typography variant="caption" color="error" fontWeight={500}>
-                  방음벽을 그려야 분석할 수 있습니다
-                </Typography>
-              </Box>
-            )}
           </Box>
 
           {/* ── 결과 ── */}
@@ -663,22 +666,16 @@ export default function SiteAnalysisPage() {
 }
 
 /* ── 구글 스타일 섹션 ── */
-function GoogleSection({ icon, title, dimmed, required, children }) {
+function GoogleSection({ icon, title, dimmed, children }) {
   return (
     <Box sx={{
       borderBottom: '1px solid #E8EAED',
       opacity: dimmed ? 0.5 : 1,
       transition: 'opacity 0.2s',
-      background: required ? '#FFF8F7' : 'transparent',
     }}>
       <Box sx={{ px: 2, pt: 2, pb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
         {icon}
-        <Typography variant="subtitle2" color={required ? 'error' : 'text.primary'}>{title}</Typography>
-        {required && (
-          <Box sx={{ ml: 'auto', px: 1, py: 0.2, borderRadius: 10, background: '#FCE8E6' }}>
-            <Typography variant="caption" fontWeight={700} color="error" sx={{ fontSize: 10 }}>필수</Typography>
-          </Box>
-        )}
+        <Typography variant="subtitle2" color="text.primary">{title}</Typography>
       </Box>
       <Box sx={{ px: 2, pb: 2, pt: 1 }}>{children}</Box>
     </Box>
