@@ -60,7 +60,7 @@ function haversineM(lng1, lat1, lng2, lat2) {
  * segments: [[lng,lat],[lng,lat]][]
  * preview:  { x1,y1,x2,y2 } | null  (드래그 중 미리보기, 화면 픽셀)
  * ════════════════════════════════════════════ */
-function drawBarriersOnCanvas(canvas, map, segments, preview) {
+function drawBarriersOnCanvas(canvas, map, segments, preview, sourceLoc) {
   if (!canvas || !map) return;
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
@@ -157,6 +157,27 @@ function drawBarriersOnCanvas(canvas, map, segments, preview) {
       ctx.fillText(label, mx, my - 3);
     }
   }
+
+  // ── 소음원 위치 점 ──
+  if (sourceLoc) {
+    const [sx, sy] = proj([sourceLoc.lng, sourceLoc.lat]);
+
+    // 외곽 반투명 링
+    ctx.beginPath(); ctx.arc(sx, sy, 18, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(234,67,53,0.12)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(234,67,53,0.4)';
+    ctx.lineWidth = 1.5; ctx.setLineDash([]);
+    ctx.stroke();
+
+    // 흰 테두리 원
+    ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+    ctx.fillStyle = 'white'; ctx.fill();
+
+    // 빨간 점
+    ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#EA4335'; ctx.fill();
+  }
 }
 
 /* ════════════════════════════════════════════
@@ -186,11 +207,13 @@ export default function MapLibre3D({
   const barrierCoordsRef   = useRef(barrierCoords || []);
   const previewRef         = useRef(null);    // 드래그 중 미리보기 상태
   const sourceMarkerRef    = useRef(null);    // HTML 소음원 마커
+  const sourceLocRef       = useRef(sourceLocation);
   const onBarrierCompleteRef = useRef(onBarrierComplete);
   const onSourceSetRef       = useRef(onSourceSet);
   const onBuildingSelectRef  = useRef(onBuildingSelect);
 
   useEffect(() => { barrierCoordsRef.current = barrierCoords || []; }, [barrierCoords]);
+  useEffect(() => { sourceLocRef.current = sourceLocation; }, [sourceLocation]);
   useEffect(() => { onBarrierCompleteRef.current = onBarrierComplete; }, [onBarrierComplete]);
   useEffect(() => { onSourceSetRef.current       = onSourceSet; },       [onSourceSet]);
   useEffect(() => { onBuildingSelectRef.current  = onBuildingSelect; },  [onBuildingSelect]);
@@ -202,7 +225,7 @@ export default function MapLibre3D({
 
   // 캔버스 재렌더링 (지도 이동/줌/방음벽 변경 시 호출)
   const redrawCanvas = useCallback(() => {
-    drawBarriersOnCanvas(drawCanvasRef.current, mapRef.current, barrierCoordsRef.current, previewRef.current);
+    drawBarriersOnCanvas(drawCanvasRef.current, mapRef.current, barrierCoordsRef.current, previewRef.current, sourceLocRef.current);
   }, []);
 
   /* ══════════════════════════════════════════
@@ -410,14 +433,23 @@ export default function MapLibre3D({
     };
   }, [drawMode, redrawCanvas]);
 
-  /* ── barrierCoords 변경 시 캔버스 재렌더 ── */
+  /* ── barrierCoords / sourceLocation 변경 시 캔버스 재렌더 ── */
   useEffect(() => {
     barrierCoordsRef.current = barrierCoords || [];
     redrawCanvas();
   }, [barrierCoords, barrierHeight, redrawCanvas]);
 
+  useEffect(() => {
+    sourceLocRef.current = sourceLocation;
+    redrawCanvas();
+  }, [sourceLocation, redrawCanvas]);
+
   /* ── 소음원 위치 (HTML 마커 — 항상 최상단) ── */
   useEffect(() => {
+    // 이전 마커 제거
+    sourceMarkerRef.current?.remove();
+    sourceMarkerRef.current = null;
+
     // 이전 마커 제거
     sourceMarkerRef.current?.remove();
     sourceMarkerRef.current = null;
@@ -429,52 +461,8 @@ export default function MapLibre3D({
     }
 
     const { lng, lat, radius = 300 } = sourceLocation;
-
-    // GeoJSON 레이어도 유지 (반경 링 등)
-    setSource('source-loc', EMPTY); // 기존 circle 레이어는 비움 (HTML 마커로 대체)
+    setSource('source-loc', EMPTY);
     setSource('radius-ring', makeCircle(lng, lat, radius));
-
-    // 애니메이션 주입 (한 번만)
-    if (!document.getElementById('source-marker-style')) {
-      const s = document.createElement('style');
-      s.id = 'source-marker-style';
-      s.textContent = `
-        @keyframes srcPulse {
-          0%   { transform: scale(1);   opacity: 0.6; }
-          80%  { transform: scale(3);   opacity: 0; }
-          100% { transform: scale(3);   opacity: 0; }
-        }
-      `;
-      document.head.appendChild(s);
-    }
-
-    // HTML 마커 — 빨간 점 + 펄스 링
-    const el = document.createElement('div');
-    el.style.cssText = `
-      position: relative;
-      width: 20px; height: 20px;
-      display: flex; align-items: center; justify-content: center;
-      cursor: default;
-    `;
-    el.innerHTML = `
-      <div style="
-        position: absolute; inset: 0; border-radius: 50%;
-        background: rgba(234,67,53,0.25);
-        animation: srcPulse 1.8s ease-out infinite;
-      "></div>
-      <div style="
-        width: 14px; height: 14px; border-radius: 50%;
-        background: #EA4335;
-        border: 2.5px solid white;
-        box-shadow: 0 0 0 1.5px #EA4335, 0 2px 6px rgba(234,67,53,0.6);
-        position: relative; z-index: 1;
-      "></div>
-    `;
-
-    const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-      .setLngLat([lng, lat])
-      .addTo(mapRef.current);
-    sourceMarkerRef.current = marker;
 
     mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, pitch: 50, duration: 600 });
   }, [sourceLocation, setSource]);
