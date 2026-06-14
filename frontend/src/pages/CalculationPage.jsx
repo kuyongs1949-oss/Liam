@@ -30,38 +30,35 @@ export default function CalculationPage() {
 
       {/* ── 왼쪽 네비게이션 레일 ── */}
       <Box sx={{
-        width: 88, flexShrink: 0,
+        width: 110, flexShrink: 0,
         background: '#FFFFFF',
         boxShadow: '1px 0 0 #E8EAED',
         display: 'flex', flexDirection: 'column',
         alignItems: 'center',
-        pt: 1.5, pb: 2,
+        pt: 2, pb: 2,
         zIndex: 200,
       }}>
         {/* 로고 + 타이틀 */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2.5, gap: 0.8 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2, gap: 1, width: '100%', px: 1 }}>
           <Box sx={{
-            width: 44, height: 44, borderRadius: '50%',
+            width: 48, height: 48, borderRadius: '50%',
             background: 'linear-gradient(135deg, #4285F4 0%, #0F9D58 50%, #FBBC04 75%, #EA4335 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}>
-            <GraphicEqIcon sx={{ fontSize: 22, color: 'white' }} />
+            <GraphicEqIcon sx={{ fontSize: 24, color: 'white' }} />
           </Box>
-          <Box sx={{ textAlign: 'center', px: 0.5 }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#202124', lineHeight: 1.3, wordBreak: 'keep-all' }}>
+          <Box sx={{ textAlign: 'center', width: '100%' }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#202124', lineHeight: 1.4, letterSpacing: '-0.3px' }}>
               현대엔지니어링
             </Typography>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, color: '#1A73E8', lineHeight: 1.3, wordBreak: 'keep-all' }}>
-              소음영향
-            </Typography>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, color: '#1A73E8', lineHeight: 1.3, wordBreak: 'keep-all' }}>
-              모델링
+            <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1A73E8', lineHeight: 1.3 }}>
+              소음영향 모델링
             </Typography>
           </Box>
         </Box>
 
         {/* 구분선 */}
-        <Box sx={{ width: '80%', height: 1, background: '#E8EAED', mb: 1.5 }} />
+        <Box sx={{ width: '85%', height: 1, background: '#E8EAED', mb: 1.5 }} />
 
         {/* 탭 버튼들 — 세로 배열 */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%', px: 0.5 }}>

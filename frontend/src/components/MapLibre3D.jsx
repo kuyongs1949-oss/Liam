@@ -432,44 +432,55 @@ export default function MapLibre3D({
     setSource('source-loc', EMPTY); // 기존 circle 레이어는 비움 (HTML 마커로 대체)
     setSource('radius-ring', makeCircle(lng, lat, radius));
 
+    // 애니메이션 keyframes (한 번만 주입)
+    if (!document.getElementById('source-marker-style')) {
+      const style = document.createElement('style');
+      style.id = 'source-marker-style';
+      style.textContent = `
+        @keyframes sourceMarkerPulse {
+          0%   { transform: scale(1);   opacity: 0.7; }
+          70%  { transform: scale(2.4); opacity: 0; }
+          100% { transform: scale(2.4); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     // HTML 마커 생성
     const el = document.createElement('div');
     el.style.cssText = `
       position: relative;
-      width: 48px; height: 48px;
+      width: 52px; height: 52px;
       display: flex; align-items: center; justify-content: center;
       cursor: default;
     `;
 
-    // 펄스 링
+    // 펄스 링 (빨강)
     const pulse = document.createElement('div');
     pulse.style.cssText = `
       position: absolute; inset: 0;
       border-radius: 50%;
-      background: rgba(250,91,15,0.15);
-      border: 2.5px solid rgba(250,91,15,0.5);
-      animation: sourceMarkerPulse 1.8s ease-out infinite;
+      background: rgba(234,67,53,0.18);
+      border: 2px solid rgba(234,67,53,0.6);
+      animation: sourceMarkerPulse 1.6s ease-out infinite;
     `;
 
-    // 중심 원
+    // 중심 빨강 점
     const dot = document.createElement('div');
     dot.style.cssText = `
-      width: 28px; height: 28px; border-radius: 50%;
-      background: #FA5B0F;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #EA4335;
       border: 3px solid white;
-      box-shadow: 0 2px 8px rgba(250,91,15,0.6);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14px; line-height: 1;
+      box-shadow: 0 0 0 2px #EA4335, 0 3px 10px rgba(234,67,53,0.7);
       z-index: 1; position: relative;
     `;
-    dot.textContent = '🔊';
 
     // 라벨
     const label = document.createElement('div');
     label.style.cssText = `
-      position: absolute; bottom: -22px; left: 50%;
+      position: absolute; bottom: -24px; left: 50%;
       transform: translateX(-50%);
-      background: #FA5B0F; color: white;
+      background: #EA4335; color: white;
       font-size: 11px; font-weight: 700;
       padding: 2px 8px; border-radius: 10px;
       white-space: nowrap;
@@ -477,20 +488,6 @@ export default function MapLibre3D({
       font-family: 'Noto Sans KR', sans-serif;
     `;
     label.textContent = '소음원';
-
-    // 애니메이션 keyframes (한 번만 주입)
-    if (!document.getElementById('source-marker-style')) {
-      const style = document.createElement('style');
-      style.id = 'source-marker-style';
-      style.textContent = `
-        @keyframes sourceMarkerPulse {
-          0%   { transform: scale(1);   opacity: 0.8; }
-          70%  { transform: scale(1.7); opacity: 0; }
-          100% { transform: scale(1.7); opacity: 0; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
 
     el.appendChild(pulse);
     el.appendChild(dot);
