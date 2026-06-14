@@ -282,18 +282,20 @@ export default function MapLibre3D({
       map.addLayer({ id: 'radius-line', type: 'line', source: 'radius-ring',
         paint: { 'line-color': '#FA5B0F', 'line-width': 1.5, 'line-dasharray': [4, 3], 'line-opacity': 0.5 } });
 
-      /* 선택된 건물 하이라이트 */
+      /* 선택된 건물 하이라이트 — noise-buildings-3d 위에 추가 */
       map.addSource('selected-building', { type: 'geojson', data: EMPTY });
-      map.addLayer({ id: 'selected-building-fill', type: 'fill-extrusion', source: 'selected-building',
+      map.addLayer({
+        id: 'selected-building-fill', type: 'fill-extrusion', source: 'selected-building',
         paint: {
           'fill-extrusion-color': '#FBBC04',
           'fill-extrusion-height': ['get', 'height'],
           'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.95,
+          'fill-extrusion-opacity': 1,
         },
       });
-      map.addLayer({ id: 'selected-building-outline', type: 'line', source: 'selected-building',
-        paint: { 'line-color': '#FA5B0F', 'line-width': 3 },
+      map.addLayer({
+        id: 'selected-building-outline', type: 'line', source: 'selected-building',
+        paint: { 'line-color': '#FA5B0F', 'line-width': 5, 'line-opacity': 1 },
       });
 
       /* 클릭 이벤트 */
@@ -545,20 +547,22 @@ export default function MapLibre3D({
       return;
     }
     const feature = buildingGeoJSON.features.find(
-      (f) => f.properties.id === selectedBuilding.id
+      (f) => String(f.properties.id) === String(selectedBuilding.id)
     );
     if (!feature) { setSource('selected-building', EMPTY); return; }
 
     setSource('selected-building', { type: 'FeatureCollection', features: [feature] });
 
-    // 건물 centroid로 카메라 이동
-    const { centroid_lng, centroid_lat } = selectedBuilding;
-    if (centroid_lng && centroid_lat && mapRef.current) {
+    // centroid: 결과 객체 우선, 없으면 feature properties
+    const clng = selectedBuilding.centroid_lng ?? feature.properties.centroid_lng;
+    const clat = selectedBuilding.centroid_lat ?? feature.properties.centroid_lat;
+    if (clng && clat && mapRef.current) {
       mapRef.current.flyTo({
-        center: [centroid_lng, centroid_lat],
-        zoom: Math.max(mapRef.current.getZoom(), 17),
+        center: [clng, clat],
+        zoom: 18,
         pitch: 60,
-        duration: 600,
+        bearing: 0,
+        duration: 700,
       });
     }
   }, [selectedBuilding, buildingGeoJSON, setSource]);

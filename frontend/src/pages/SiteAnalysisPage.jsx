@@ -170,6 +170,7 @@ export default function SiteAnalysisPage() {
             max_noise_db: r.max_noise_db, noise_level: r.noise_level || 'safe',
             exceeds_65db: r.exceeds_65db ? 1 : 0, exceeding_floors: r.exceeding_floors,
             distance: r.distance,
+            centroid_lat: r.centroid_lat, centroid_lng: r.centroid_lng,
           }};
         }),
       });
