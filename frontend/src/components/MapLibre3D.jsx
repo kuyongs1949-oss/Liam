@@ -432,19 +432,46 @@ export default function MapLibre3D({
     setSource('source-loc', EMPTY); // 기존 circle 레이어는 비움 (HTML 마커로 대체)
     setSource('radius-ring', makeCircle(lng, lat, radius));
 
-    // HTML 마커 — 빨간 점 (중심 정확히 일치)
+    // 애니메이션 주입 (한 번만)
+    if (!document.getElementById('source-marker-style')) {
+      const s = document.createElement('style');
+      s.id = 'source-marker-style';
+      s.textContent = `
+        @keyframes srcPulse {
+          0%   { transform: scale(1);   opacity: 0.6; }
+          80%  { transform: scale(2.8); opacity: 0; }
+          100% { transform: scale(2.8); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(s);
+    }
+
+    // HTML 마커 — 구글맵 스타일 위치 핀
     const el = document.createElement('div');
     el.style.cssText = `
       position: relative;
-      width: 16px; height: 16px;
-      border-radius: 50%;
-      background: #EA4335;
-      border: 2.5px solid white;
-      box-shadow: 0 0 0 2px #EA4335, 0 2px 8px rgba(234,67,53,0.6);
+      width: 36px; height: 44px;
       cursor: default;
     `;
 
-    const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+    // SVG 핀 (물방울 모양, 빨강)
+    el.innerHTML = `
+      <svg width="36" height="44" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M18 0C9.163 0 2 7.163 2 16C2 27 18 44 18 44C18 44 34 27 34 16C34 7.163 26.837 0 18 0Z"
+              fill="#EA4335" stroke="white" stroke-width="2"/>
+        <circle cx="18" cy="16" r="7" fill="white"/>
+        <circle cx="18" cy="16" r="4" fill="#EA4335"/>
+      </svg>
+      <div style="
+        position: absolute; bottom: -6px; left: 50%;
+        transform: translateX(-50%);
+        width: 10px; height: 10px; border-radius: 50%;
+        background: rgba(234,67,53,0.3);
+        animation: srcPulse 1.8s ease-out infinite;
+      "></div>
+    `;
+
+    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
       .setLngLat([lng, lat])
       .addTo(mapRef.current);
     sourceMarkerRef.current = marker;
