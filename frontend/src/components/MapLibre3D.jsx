@@ -432,66 +432,17 @@ export default function MapLibre3D({
     setSource('source-loc', EMPTY); // 기존 circle 레이어는 비움 (HTML 마커로 대체)
     setSource('radius-ring', makeCircle(lng, lat, radius));
 
-    // 애니메이션 keyframes (한 번만 주입)
-    if (!document.getElementById('source-marker-style')) {
-      const style = document.createElement('style');
-      style.id = 'source-marker-style';
-      style.textContent = `
-        @keyframes sourceMarkerPulse {
-          0%   { transform: scale(1);   opacity: 0.7; }
-          70%  { transform: scale(2.4); opacity: 0; }
-          100% { transform: scale(2.4); opacity: 0; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
-    // HTML 마커 생성
+    // HTML 마커 — 빨간 점 (중심 정확히 일치)
     const el = document.createElement('div');
     el.style.cssText = `
       position: relative;
-      width: 52px; height: 52px;
-      display: flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #EA4335;
+      border: 2.5px solid white;
+      box-shadow: 0 0 0 2px #EA4335, 0 2px 8px rgba(234,67,53,0.6);
       cursor: default;
     `;
-
-    // 펄스 링 (빨강)
-    const pulse = document.createElement('div');
-    pulse.style.cssText = `
-      position: absolute; inset: 0;
-      border-radius: 50%;
-      background: rgba(234,67,53,0.18);
-      border: 2px solid rgba(234,67,53,0.6);
-      animation: sourceMarkerPulse 1.6s ease-out infinite;
-    `;
-
-    // 중심 빨강 점
-    const dot = document.createElement('div');
-    dot.style.cssText = `
-      width: 22px; height: 22px; border-radius: 50%;
-      background: #EA4335;
-      border: 3px solid white;
-      box-shadow: 0 0 0 2px #EA4335, 0 3px 10px rgba(234,67,53,0.7);
-      z-index: 1; position: relative;
-    `;
-
-    // 라벨
-    const label = document.createElement('div');
-    label.style.cssText = `
-      position: absolute; bottom: -24px; left: 50%;
-      transform: translateX(-50%);
-      background: #EA4335; color: white;
-      font-size: 11px; font-weight: 700;
-      padding: 2px 8px; border-radius: 10px;
-      white-space: nowrap;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-      font-family: 'Noto Sans KR', sans-serif;
-    `;
-    label.textContent = '소음원';
-
-    el.appendChild(pulse);
-    el.appendChild(dot);
-    el.appendChild(label);
 
     const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
       .setLngLat([lng, lat])
