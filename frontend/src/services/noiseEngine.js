@@ -360,6 +360,13 @@ export function calculateBuildingNoise({
   sufferingMonths = 3,
 }) {
   const { centroid_lat, centroid_lng, floors } = building;
+
+  // 소음원 → 건물 직선이 방음벽 선분 중 하나라도 교차해야 "방음벽 밖" 민원인
+  const S = [sourceLng, sourceLat];
+  const R = [centroid_lng, centroid_lat];
+  const behind_barrier = barrierSegments.length === 0
+    || barrierSegments.some(([B1, B2]) => segmentsIntersect(S, R, B1, B2));
+
   const floorResults = [];
 
   for (let f = 1; f <= Math.min(floors, 50); f++) {
@@ -392,5 +399,6 @@ export function calculateBuildingNoise({
     noise_level: maxFloor.noise_level || 'safe',
     barrier_d1: f1?.barrier_d1 || 0,
     barrier_d2: f1?.barrier_d2 || 0,
+    behind_barrier,
   };
 }

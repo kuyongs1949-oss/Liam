@@ -1,23 +1,15 @@
 import React, { useState } from 'react';
-import { Box, Typography, Grid, Paper, Tooltip } from '@mui/material';
+import { Box, Typography, Tooltip } from '@mui/material';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
-import CalculateIcon from '@mui/icons-material/Calculate';
-import GroupsIcon from '@mui/icons-material/Groups';
-import MapIcon from '@mui/icons-material/Map';
 import StraightenIcon from '@mui/icons-material/Straighten';
 import StreetviewIcon from '@mui/icons-material/Streetview';
 
-import CalculationForm from '../components/CalculationForm';
-import MapViewer from '../components/MapViewer';
-import CompensationTable from '../components/CompensationTable';
 import SiteAnalysisPage from './SiteAnalysisPage';
 import DistancePage from './DistancePage';
 import StreetViewPage from './StreetViewPage';
 
 const NAV_ITEMS = [
   { icon: <GraphicEqIcon />,  label: '현장 분석' },
-  { icon: <CalculateIcon />,  label: '간편 계산' },
-  { icon: <GroupsIcon />,     label: '다중 세대' },
   { icon: <StraightenIcon />, label: '거리재기' },
   { icon: <StreetviewIcon />, label: '거리뷰'   },
 ];
@@ -40,18 +32,15 @@ export default function CalculationPage() {
       }}>
         {/* 로고 + 타이틀 */}
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2, gap: 1, width: '100%', px: 1 }}>
-          <Box sx={{
-            width: 48, height: 48, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #4285F4 0%, #0F9D58 50%, #FBBC04 75%, #EA4335 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            <GraphicEqIcon sx={{ fontSize: 24, color: 'white' }} />
+          <Box sx={{ width: 96, height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img
+              src="https://daoift3qrrnil.cloudfront.net/company_groups/images/000/001/377/original/img.jpg?1691998138"
+              alt="현대엔지니어링"
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
           </Box>
           <Box sx={{ textAlign: 'center', width: '100%' }}>
-            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#202124', lineHeight: 1.4, letterSpacing: '-0.3px' }}>
-              현대엔지니어링
-            </Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1A73E8', lineHeight: 1.3 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#1A73E8', lineHeight: 1.3 }}>
               소음영향 모델링
             </Typography>
           </Box>
@@ -99,35 +88,8 @@ export default function CalculationPage() {
       <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {tab === 0 && <SiteAnalysisPage />}
 
-        {tab === 1 && (
-          <Box sx={{ p: 3, flex: 1, overflowY: 'auto' }}>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={4}><CalculationForm mode="quick" /></Grid>
-              <Grid item xs={12} md={8}><CompensationTable /></Grid>
-            </Grid>
-          </Box>
-        )}
-
-        {tab === 2 && (
-          <Box sx={{ p: 3, flex: 1, overflowY: 'auto' }}>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={4}><CalculationForm mode="multi" /></Grid>
-              <Grid item xs={12} md={8}>
-                <Paper elevation={1} sx={{ height: 420, mb: 3, borderRadius: 2, overflow: 'hidden' }}>
-                  <Box sx={{ px: 2, py: 1.2, borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <MapIcon sx={{ fontSize: 16, color: '#1A73E8' }} />
-                    <Typography variant="body2" fontWeight={500} color="primary">소음 영향 지도</Typography>
-                  </Box>
-                  <Box sx={{ height: 'calc(100% - 42px)' }}><MapViewer /></Box>
-                </Paper>
-                <CompensationTable />
-              </Grid>
-            </Grid>
-          </Box>
-        )}
-
-        {tab === 3 && <DistancePage />}
-        {tab === 4 && <StreetViewPage />}
+        {tab === 1 && <DistancePage />}
+        {tab === 2 && <StreetViewPage />}
       </Box>
     </Box>
   );

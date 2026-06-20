@@ -11,6 +11,7 @@ const rateLimit = require('express-rate-limit');
 
 const calculationsRouter = require('./api/routes/calculations');
 const compensationRouter = require('./api/routes/compensation');
+const geocodeRouter     = require('./api/routes/geocode');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -18,7 +19,15 @@ const FRONTEND_URL = process.env.FRONTEND_URL || '*';
 
 // 미들웨어
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
-app.use(cors({ origin: FRONTEND_URL }));
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // curl 등 non-browser
+    const allowed = FRONTEND_URL === '*'
+      || origin === FRONTEND_URL
+      || /\.vercel\.app$/.test(origin);
+    cb(allowed ? null : new Error('CORS'), allowed);
+  },
+}));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 
@@ -31,6 +40,7 @@ app.use(
 // 라우터
 app.use('/api/calculations', calculationsRouter);
 app.use('/api/compensation', compensationRouter);
+app.use('/api/geocode',      geocodeRouter);
 
 // Health check
 app.get('/health', (req, res) => {

@@ -88,7 +88,8 @@ export default function SiteAnalysisPage() {
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [loading, setLoading]             = useState(false);
   const [error, setError]                 = useState('');
-  const [panelOpen, setPanelOpen]         = useState(true);  // 사이드 패널 토글
+  const [panelOpen, setPanelOpen]         = useState(true);
+  const [currentStep, setCurrentStep]     = useState(1);
 
   const lwTotal = useMemo(() => combineLw(equipments), [equipments]);
   const drawModeRef = useRef(drawMode);
@@ -98,16 +99,22 @@ export default function SiteAnalysisPage() {
     const q = addrQuery.trim(); if (!q) return;
     setAddrLoading(true); setAddrResults([]);
     try {
-      const res  = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&countrycodes=kr&accept-language=ko`);
+      const res  = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=5&countrycodes=kr&accept-language=ko`
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setAddrResults(data);
       if (!data.length) setError('주소 검색 결과가 없습니다.');
-    } catch { setError('주소 검색 실패.'); } finally { setAddrLoading(false); }
+    } catch (e) { setError(`주소 검색 실패: ${e.message}`); } finally { setAddrLoading(false); }
   }, [addrQuery]);
 
   const handleAddrSelect = useCallback((item) => {
     setFlyToLocation({ lng: parseFloat(item.lon), lat: parseFloat(item.lat), zoom: 16 });
-    setAddrResults([]); setAddrQuery(item.display_name.split(',')[0]);
+    const a = item.address || {};
+    const name = item.name || item.display_name.split(',')[0];
+    const road = [a.road, a.house_number].filter(Boolean).join(' ');
+    setAddrResults([]); setAddrQuery(road ? `${name} (${road})` : name);
   }, []);
 
   const handleSourceSet = useCallback(({ lng, lat }) => {
@@ -138,43 +145,51 @@ export default function SiteAnalysisPage() {
         })
       );
 
-      // OSM 주소가 없는 건물만 Nominatim 역지오코딩 (최대 5건 병렬)
-      const noAddr = calcResults.filter((r) => !r.addr);
-      const chunks = [];
-      for (let i = 0; i < noAddr.length; i += 5) chunks.push(noAddr.slice(i, i + 5));
-      for (const chunk of chunks) {
-        await Promise.all(chunk.map(async (r) => {
-          try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?lat=${r.centroid_lat}&lon=${r.centroid_lng}&format=json&accept-language=ko`,
-              { headers: { 'User-Agent': 'NoiseAssessmentSystem/1.0' } }
-            );
-            const data = await res.json();
-            const a = data.address || {};
-            r.addr = [a.road, a.house_number].filter(Boolean).join(' ')
-              || a.suburb || a.quarter || a.neighbourhood || data.display_name?.split(',')[0] || '';
-            if (!r.name || r.name === '건물') {
-              r.name = a.building || a.amenity || a.leisure || '건물';
-            }
-          } catch { /* 실패 시 공백 유지 */ }
-        }));
-      }
+      // 방음벽 밖 건물만 필터
+      const outsideResults = calcResults.filter((r) => r.behind_barrier);
+      const sorted = outsideResults.sort((a, b) => b.max_noise_db - a.max_noise_db);
 
-      setBuildings({
+      const buildingGeoJSON = {
         ...geoJSON,
-        features: geoJSON.features.map((f, i) => {
-          const r = calcResults[i];
-          return { ...f, properties: {
+        features: geoJSON.features
+          .map((f, i) => ({ f, r: calcResults[i] }))
+          .filter(({ r }) => r.behind_barrier)
+          .map(({ f, r }) => ({ ...f, properties: {
             id: r.id, name: r.name || '건물', floors: r.floors,
             height: r.height || r.floors * 3, color: r.color,
             max_noise_db: r.max_noise_db, noise_level: r.noise_level || 'safe',
             exceeds_65db: r.exceeds_65db ? 1 : 0, exceeding_floors: r.exceeding_floors,
             distance: r.distance,
             centroid_lat: r.centroid_lat, centroid_lng: r.centroid_lng,
-          }};
-        }),
-      });
-      setResults(calcResults.sort((a, b) => b.max_noise_db - a.max_noise_db));
+          }})),
+      };
+
+      // 결과를 즉시 표시
+      setBuildings(buildingGeoJSON);
+      setResults(sorted);
+      setCurrentStep(5);
+      setDrawMode(null);
+
+      // 주소 또는 이름이 없는 건물을 백그라운드에서 역지오코딩 (순차 처리로 rate limit 방지)
+      const noAddr = sorted.filter((r) => !r.addr || r.name === '건물').slice(0, 20);
+      if (noAddr.length > 0) {
+        (async () => {
+          for (const r of noAddr) {
+            try {
+              const res = await fetch(`/api/geocode/reverse?lat=${r.centroid_lat}&lon=${r.centroid_lng}`);
+              const data = await res.json();
+              const a = data.address || {};
+              r.addr = [a.road, a.house_number].filter(Boolean).join(' ')
+                || a.suburb || a.quarter || data.display_name?.split(',')[0] || '';
+              if (!r.name || r.name === '건물') {
+                r.name = a.building || a.amenity || a.leisure || '건물';
+              }
+              setResults((prev) => [...prev]); // 한 건씩 업데이트
+            } catch { /* 주소 없이 유지 */ }
+            await new Promise((resolve) => setTimeout(resolve, 300)); // 300ms 간격
+          }
+        })();
+      }
     } catch (e) { setError(`오류: ${e.message}`); } finally { setLoading(false); }
   };
 
@@ -246,10 +261,19 @@ export default function SiteAnalysisPage() {
                   <LocationOnIcon sx={{ fontSize: 18, color: '#EA4335', flexShrink: 0 }} />
                   <Box sx={{ overflow: 'hidden' }}>
                     <Typography variant="body2" fontWeight={500} noWrap>
-                      {item.display_name.split(',').slice(0, 2).join(' ')}
+                      {(() => {
+                        const a = item.address || {};
+                        const name = item.name || item.display_name.split(',')[0];
+                        const road = [a.road, a.house_number].filter(Boolean).join(' ');
+                        return road ? `${name} (${road})` : name;
+                      })()}
                     </Typography>
-                    <Typography variant="caption" noWrap>
-                      {item.display_name.split(',').slice(2, 5).join(', ')}
+                    <Typography variant="caption" noWrap color="text.secondary">
+                      {(() => {
+                        const a = item.address || {};
+                        return [a.suburb || a.quarter, a.city || a.town || a.county, a.state]
+                          .filter(Boolean).join(' ');
+                      })()}
                     </Typography>
                   </Box>
                 </Box>
@@ -288,226 +312,272 @@ export default function SiteAnalysisPage() {
             </Alert>
           )}
 
-          {/* 1. 장비 선택 */}
-          <GoogleSection icon={<VolumeUpIcon sx={{ fontSize: 18, color: '#1A73E8' }} />} title="소음 발생 장비">
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.8, mb: 1.5 }}>
-              {equipments.map((eq, i) => {
-                const info = EQUIPMENT_LIST.find((e) => e.id === eq.id);
-                const rowLw = info ? +(info.Lw + 10 * Math.log10(Math.max(eq.count, 1))).toFixed(1) : 0;
-                return (
-                  <Box key={i} sx={{
-                    display: 'flex', gap: 0.8, alignItems: 'center',
-                    p: 1, borderRadius: 2, background: '#F8F9FA',
-                    '&:hover': { background: '#F1F3F4' },
-                  }}>
-                    <FormControl size="small" sx={{ flex: 1 }}>
-                      <Select value={eq.id} sx={{ fontSize: 13, borderRadius: 2, background: '#fff' }}
-                        onChange={(e) => setEquipments((p) => p.map((x, j) => j === i ? { ...x, id: e.target.value } : x))}>
-                        {EQUIPMENT_LIST.map((e) => (
-                          <MenuItem key={e.id} value={e.id}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 1 }}>
-                              <Typography variant="body2">{e.name}</Typography>
-                              <Typography variant="caption" color="text.secondary">{e.Lw}dB</Typography>
-                            </Box>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    <TextField size="small" type="number" sx={{ width: 68 }}
-                      value={eq.count} inputProps={{ min: 1, max: 30 }}
-                      InputProps={{
-                        endAdornment: <InputAdornment position="end"><Typography variant="caption">대</Typography></InputAdornment>,
-                        sx: { borderRadius: 2, background: '#fff' },
-                      }}
-                      onChange={(e) => setEquipments((p) => p.map((x, j) => j === i ? { ...x, count: +e.target.value } : x))} />
-                    <Box sx={{ textAlign: 'center', minWidth: 40 }}>
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: 10 }}>Lw합산</Typography>
-                      <Typography variant="caption" fontWeight={600} color="primary">{rowLw}</Typography>
+          {/* ══ STEP 1: 소음 발생 장비 ══ */}
+          <StepHeader
+            step={1} currentStep={currentStep} icon={<VolumeUpIcon sx={{ fontSize: 16 }} />}
+            title="소음 발생 장비"
+            summary={`${equipments.map((eq) => { const info = EQUIPMENT_LIST.find((e) => e.id === eq.id); return `${info?.name ?? eq.id} ${eq.count}대`; }).join(', ')} · Lw ${lwTotal.toFixed(1)}dB`}
+            onEdit={() => setCurrentStep(1)}
+          />
+          <Collapse in={currentStep === 1}>
+            <Box sx={{ px: 2, pb: 2, pt: 1 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.8, mb: 1.5 }}>
+                {equipments.map((eq, i) => {
+                  const info = EQUIPMENT_LIST.find((e) => e.id === eq.id);
+                  const rowLw = info ? +(info.Lw + 10 * Math.log10(Math.max(eq.count, 1))).toFixed(1) : 0;
+                  return (
+                    <Box key={i} sx={{
+                      display: 'flex', gap: 0.8, alignItems: 'center',
+                      p: 1, borderRadius: 2, background: '#F8F9FA',
+                      '&:hover': { background: '#F1F3F4' },
+                    }}>
+                      <FormControl size="small" sx={{ flex: 1 }}>
+                        <Select value={eq.id} sx={{ fontSize: 13, borderRadius: 2, background: '#fff' }}
+                          onChange={(e) => setEquipments((p) => p.map((x, j) => j === i ? { ...x, id: e.target.value } : x))}>
+                          {EQUIPMENT_LIST.map((e) => (
+                            <MenuItem key={e.id} value={e.id}>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+                                <Typography variant="body2">{e.name}</Typography>
+                                <Typography variant="caption" color="text.secondary">{e.Lw}dB</Typography>
+                              </Box>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <TextField size="small" type="number" sx={{
+                          width: 80,
+                          '& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button': { display: 'none' },
+                          '& input[type=number]': { MozAppearance: 'textfield' },
+                        }}
+                        value={eq.count} inputProps={{ min: 1, max: 30 }}
+                        InputProps={{
+                          endAdornment: <InputAdornment position="end"><Typography variant="caption">대</Typography></InputAdornment>,
+                          sx: { borderRadius: 2, background: '#fff' },
+                        }}
+                        onChange={(e) => setEquipments((p) => p.map((x, j) => j === i ? { ...x, count: +e.target.value } : x))} />
+                      <Box sx={{ textAlign: 'center', minWidth: 40 }}>
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: 10 }}>Lw합산</Typography>
+                        <Typography variant="caption" fontWeight={600} color="primary">{rowLw}</Typography>
+                      </Box>
+                      <IconButton size="small" disabled={equipments.length === 1}
+                        onClick={() => setEquipments((p) => p.filter((_, j) => j !== i))}>
+                        <DeleteIcon sx={{ fontSize: 16, color: '#EA4335' }} />
+                      </IconButton>
                     </Box>
-                    <IconButton size="small" disabled={equipments.length === 1}
-                      onClick={() => setEquipments((p) => p.filter((_, j) => j !== i))}>
-                      <DeleteIcon sx={{ fontSize: 16, color: '#EA4335' }} />
-                    </IconButton>
-                  </Box>
-                );
-              })}
-            </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Button size="small" startIcon={<AddIcon />} onClick={() => setEquipments((p) => [...p, { id: 'crane', count: 1 }])}
-                sx={{ borderRadius: 20, fontSize: 12 }}>
-                장비 추가
-              </Button>
-              <Box sx={{
-                px: 2, py: 0.8, borderRadius: 20,
-                background: '#E8F0FE', display: 'flex', alignItems: 'baseline', gap: 0.5,
-              }}>
-                <Typography fontWeight={700} color="primary" sx={{ fontSize: 18, lineHeight: 1 }}>
-                  {lwTotal.toFixed(1)}
-                </Typography>
-                <Typography variant="caption" color="primary" fontWeight={500}>dB(A)</Typography>
+                  );
+                })}
               </Box>
-            </Box>
-          </GoogleSection>
-
-          {/* 2. 현장 위치 */}
-          <GoogleSection icon={<MyLocationIcon sx={{ fontSize: 18, color: '#EA4335' }} />} title="소음원 위치">
-            {sourceLocation ? (
-              <Box sx={{
-                display: 'flex', alignItems: 'center', gap: 1, p: 1.5, borderRadius: 2,
-                background: '#E6F4EA', mb: 1.5,
-              }}>
-                <CheckCircleIcon sx={{ color: '#0F9D58', fontSize: 20 }} />
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="body2" fontWeight={600} color="secondary">위치 설정 완료</Typography>
-                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: 11 }}>
-                    {sourceLocation.lat.toFixed(5)}, {sourceLocation.lng.toFixed(5)}
-                  </Typography>
-                </Box>
-                <IconButton size="small" onClick={() => { setSourceLocation(null); setResults([]); setBuildings(null); setBarrierSegments([]); }}>
-                  <CloseIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Box>
-            ) : (
-              <Box sx={{ p: 2, borderRadius: 2, background: '#F8F9FA', textAlign: 'center', mb: 1.5 }}>
-                <LocationOnIcon sx={{ color: '#BDC1C6', fontSize: 28, mb: 0.5 }} />
-                <Typography variant="body2" color="text.secondary">지도를 클릭해 현장 위치 선택</Typography>
-              </Box>
-            )}
-            <Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                <Typography variant="caption" color="text.secondary">탐색 반경</Typography>
-                <Typography variant="caption" fontWeight={600} color="primary">{radius}m</Typography>
-              </Box>
-              <Slider value={radius} min={100} max={600} step={50}
-                marks={[{value:100,label:'100m'},{value:300,label:'300m'},{value:600,label:'600m'}]}
-                onChange={(_, v) => { setRadius(v); if (sourceLocation) setSourceLocation((p) => ({...p, radius: v})); }}
-                valueLabelDisplay="auto" valueLabelFormat={(v) => `${v}m`} />
-            </Box>
-          </GoogleSection>
-
-          {/* 3. 방음벽 */}
-          <GoogleSection icon={<ShieldIcon sx={{ fontSize: 18, color: '#1A73E8' }} />} title="방음벽 설정">
-
-            {barrierSegments.length === 0 ? (
-              /* ── 미설정 상태: 그리기 유도 ── */
-              <Box>
-                <Box sx={{ p: 2, borderRadius: 2, background: '#FFF8F7', border: '1.5px dashed #EA4335', textAlign: 'center', mb: 1.5 }}>
-                  <ShieldIcon sx={{ fontSize: 32, color: '#EA4335', mb: 0.5 }} />
-                  <Typography variant="body2" fontWeight={600} color="error" display="block">방음벽을 반드시 그려야 합니다</Typography>
-                  <Typography variant="caption" color="text.secondary">소음원 위치 설정 후 펜으로 방음벽 위치를 그려주세요</Typography>
-                </Box>
-                <Button fullWidth variant="contained" color="error" size="medium"
-                  startIcon={<EditIcon />}
-                  disabled={!sourceLocation}
-                  onClick={() => setDrawMode('barrier')}
-                  sx={{ borderRadius: 20, fontWeight: 600 }}>
-                  방음벽 그리기 시작
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Button size="small" startIcon={<AddIcon />} onClick={() => setEquipments((p) => [...p, { id: 'crane', count: 1 }])}
+                  sx={{ borderRadius: 20, fontSize: 12 }}>
+                  장비 추가
                 </Button>
+                <Box sx={{ px: 2, py: 0.8, borderRadius: 20, background: '#E8F0FE', display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
+                  <Typography fontWeight={700} color="primary" sx={{ fontSize: 18, lineHeight: 1 }}>{lwTotal.toFixed(1)}</Typography>
+                  <Typography variant="caption" color="primary" fontWeight={500}>dB(A)</Typography>
+                </Box>
               </Box>
-            ) : (
-              /* ── 설정 완료 상태 ── */
-              <Box>
-                <Box sx={{ p: 1.2, borderRadius: 2, background: '#E8F0FE', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CheckCircleIcon sx={{ fontSize: 18, color: '#0F9D58' }} />
+              <Button fullWidth variant="contained" onClick={() => setCurrentStep(2)}
+                sx={{ borderRadius: 20, fontWeight: 600 }} endIcon={<ChevronRightIcon />}>
+                다음: 소음원 위치
+              </Button>
+            </Box>
+          </Collapse>
+
+          <Divider />
+
+          {/* ══ STEP 2: 소음원 위치 ══ */}
+          <StepHeader
+            step={2} currentStep={currentStep} icon={<MyLocationIcon sx={{ fontSize: 16 }} />}
+            title="소음원 위치"
+            summary={sourceLocation ? `${sourceLocation.lat.toFixed(5)}, ${sourceLocation.lng.toFixed(5)} · 반경 ${radius}m` : '미설정'}
+            onEdit={() => setCurrentStep(2)}
+          />
+          <Collapse in={currentStep === 2}>
+            <Box sx={{ px: 2, pb: 2, pt: 1 }}>
+              {sourceLocation ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5, borderRadius: 2, background: '#E6F4EA', mb: 1.5 }}>
+                  <CheckCircleIcon sx={{ color: '#0F9D58', fontSize: 20 }} />
                   <Box sx={{ flex: 1 }}>
-                    <Typography variant="caption" fontWeight={700} color="secondary" display="block">
-                      방음벽 {barrierSegments.length}선분 설정 완료
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
-                      d₁ / d₂ 건물별 자동 계산 (ISO 9613-2)
+                    <Typography variant="body2" fontWeight={600} color="secondary">위치 설정 완료</Typography>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: 11 }}>
+                      {sourceLocation.lat.toFixed(5)}, {sourceLocation.lng.toFixed(5)}
                     </Typography>
                   </Box>
-                  <Button size="small" color="error" variant="text"
-                    onClick={() => { setBarrierSegments([]); setDrawMode(null); }}
-                    sx={{ flexShrink: 0, borderRadius: 20, fontSize: 11, minWidth: 0, px: 1 }}>
-                    다시 그리기
+                  <IconButton size="small" onClick={() => { setSourceLocation(null); setResults([]); setBuildings(null); setBarrierSegments([]); }}>
+                    <CloseIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Box>
+              ) : (
+                <Box sx={{ p: 2, borderRadius: 2, background: '#F8F9FA', textAlign: 'center', mb: 1.5 }}>
+                  <LocationOnIcon sx={{ color: '#BDC1C6', fontSize: 28, mb: 0.5 }} />
+                  <Typography variant="body2" color="text.secondary">지도를 클릭해 현장 위치 선택</Typography>
+                </Box>
+              )}
+              <Box sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary">탐색 반경</Typography>
+                  <Typography variant="caption" fontWeight={600} color="primary">{radius}m</Typography>
+                </Box>
+                <Slider value={radius} min={100} max={600} step={50}
+                  marks={[{value:100,label:'100m'},{value:300,label:'300m'},{value:600,label:'600m'}]}
+                  onChange={(_, v) => { setRadius(v); if (sourceLocation) setSourceLocation((p) => ({...p, radius: v})); }}
+                  valueLabelDisplay="auto" valueLabelFormat={(v) => `${v}m`} />
+              </Box>
+              <Button fullWidth variant="contained" onClick={() => setCurrentStep(3)}
+                disabled={!sourceLocation}
+                sx={{ borderRadius: 20, fontWeight: 600 }} endIcon={<ChevronRightIcon />}>
+                다음: 방음벽 설정
+              </Button>
+            </Box>
+          </Collapse>
+
+          <Divider />
+
+          {/* ══ STEP 3: 방음벽 설정 ══ */}
+          <StepHeader
+            step={3} currentStep={currentStep} icon={<ShieldIcon sx={{ fontSize: 16 }} />}
+            title="방음벽 설정"
+            summary={barrierSegments.length > 0 ? `${barrierSegments.length}선분 · 높이 ${barrierHeight}m` : '미설정'}
+            onEdit={() => setCurrentStep(3)}
+          />
+          <Collapse in={currentStep === 3}>
+            <Box sx={{ px: 2, pb: 2, pt: 1 }}>
+              {barrierSegments.length === 0 ? (
+                <Box>
+                  <Box sx={{ p: 2, borderRadius: 2, background: '#FFF8F7', border: '1.5px dashed #EA4335', textAlign: 'center', mb: 1.5 }}>
+                    <ShieldIcon sx={{ fontSize: 32, color: '#EA4335', mb: 0.5 }} />
+                    <Typography variant="body2" fontWeight={600} color="error" display="block">방음벽을 반드시 그려야 합니다</Typography>
+                    <Typography variant="caption" color="text.secondary">소음원 위치 설정 후 펜으로 방음벽 위치를 그려주세요</Typography>
+                  </Box>
+                  <Button fullWidth variant="contained" color="error" size="medium"
+                    startIcon={<EditIcon />}
+                    disabled={!sourceLocation}
+                    onClick={() => setDrawMode('barrier')}
+                    sx={{ borderRadius: 20, fontWeight: 600 }}>
+                    방음벽 그리기 시작
                   </Button>
                 </Box>
-
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, flexShrink: 0 }}>높이</Typography>
-                  <Slider value={barrierHeight} min={1} max={12} step={0.5} sx={{ flex: 1 }}
-                    onChange={(_, v) => setBarrierHeight(v)}
-                    valueLabelDisplay="on" valueLabelFormat={(v) => `${v}m`} />
-                  <TextField size="small" type="number" sx={{ width: 72 }}
-                    value={barrierHeight} inputProps={{ min: 1, max: 12, step: 0.5 }}
-                    InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment>, sx: { borderRadius: 2 } }}
-                    onChange={(e) => setBarrierHeight(+e.target.value)} />
-                </Box>
-
-                <Button fullWidth size="small"
-                  variant={drawMode === 'barrier' ? 'contained' : 'outlined'}
-                  color={drawMode === 'barrier' ? 'warning' : 'primary'}
-                  startIcon={<EditIcon sx={{ fontSize: 14 }} />}
-                  onClick={() => setDrawMode(drawMode === 'barrier' ? null : 'barrier')}
-                  sx={{ borderRadius: 20, fontSize: 12 }}>
-                  {drawMode === 'barrier' ? '그리기 중지' : '선분 추가'}
-                </Button>
-              </Box>
-            )}
-          </GoogleSection>
-
-          {/* 4. 공사 기간 */}
-          <GoogleSection icon={<AccessTimeIcon sx={{ fontSize: 18, color: '#E37400' }} />} title="공사 기간">
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <Slider value={sufferingMonths} min={1} max={36} step={1} sx={{ flex: 1 }}
-                marks={[{value:1,label:'1개월'},{value:12,label:'1년'},{value:36,label:'3년'}]}
-                onChange={(_, v) => setSufferingMonths(v)}
-                valueLabelDisplay="on" valueLabelFormat={(v) => `${v}개월`} />
-              <Box sx={{ minWidth: 52, textAlign: 'center', p: 1, borderRadius: 2, background: '#FEF7E0' }}>
-                <Typography fontWeight={700} color="warning.main" sx={{ fontSize: 18, lineHeight: 1 }}>{sufferingMonths}</Typography>
-                <Typography variant="caption" color="warning.main">개월</Typography>
-              </Box>
-            </Box>
-
-            {/* 보상표 */}
-            <Box sx={{ borderRadius: 2, overflow: 'hidden', border: '1px solid #E8EAED' }}>
-              <Box sx={{ px: 2, py: 1, background: '#F8F9FA', borderBottom: '1px solid #E8EAED' }}>
-                <Typography variant="caption" fontWeight={600} color="text.secondary">
-                  환경분쟁조정위원회 배상 기준 (2026.1.1~) — 인당 누적
-                </Typography>
-              </Box>
-              {['level1','level2','level3','level4'].map((key, bi) => {
-                const lv = LEVELS[key];
-                const ranges  = ['65~70dB','70~75dB','75~80dB','80dB↑'];
-                const excess  = ['1~5dB','6~10dB','11~15dB','16dB↑'];
-                const amt     = getCompAmt(key, sufferingMonths);
-                return (
-                  <Box key={key} sx={{
-                    display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-                    px: 2, py: 0.8, alignItems: 'center',
-                    background: lv.bg,
-                    borderBottom: bi < 3 ? '1px solid #E8EAED' : 'none',
-                  }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: lv.color }} />
-                      <Typography variant="caption" fontWeight={600} sx={{ color: lv.color }}>{ranges[bi]}</Typography>
+              ) : (
+                <Box>
+                  <Box sx={{ p: 1.2, borderRadius: 2, background: '#E8F0FE', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CheckCircleIcon sx={{ fontSize: 18, color: '#0F9D58' }} />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="caption" fontWeight={700} color="secondary" display="block">
+                        방음벽 {barrierSegments.length}선분 설정 완료
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
+                        d₁ / d₂ 건물별 자동 계산 (ISO 9613-2)
+                      </Typography>
                     </Box>
-                    <Typography variant="caption" color="text.secondary">초과 {excess[bi]}</Typography>
-                    <Typography variant="caption" fontWeight={700} sx={{ color: lv.color }}>
-                      ₩{amt.toLocaleString()}
-                    </Typography>
+                    <Button size="small" color="error" variant="text"
+                      onClick={() => { setBarrierSegments([]); setDrawMode(null); }}
+                      sx={{ flexShrink: 0, borderRadius: 20, fontSize: 11, minWidth: 0, px: 1 }}>
+                      다시 그리기
+                    </Button>
                   </Box>
-                );
-              })}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, flexShrink: 0 }}>높이</Typography>
+                    <Slider value={barrierHeight} min={1} max={12} step={0.5} sx={{ flex: 1 }}
+                      onChange={(_, v) => setBarrierHeight(v)}
+                      valueLabelDisplay="on" valueLabelFormat={(v) => `${v}m`} />
+                    <TextField size="small" type="number" sx={{ width: 72 }}
+                      value={barrierHeight} inputProps={{ min: 1, max: 12, step: 0.5 }}
+                      InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment>, sx: { borderRadius: 2 } }}
+                      onChange={(e) => setBarrierHeight(+e.target.value)} />
+                  </Box>
+                  <Button fullWidth size="small"
+                    variant={drawMode === 'barrier' ? 'contained' : 'outlined'}
+                    color={drawMode === 'barrier' ? 'warning' : 'primary'}
+                    startIcon={<EditIcon sx={{ fontSize: 14 }} />}
+                    onClick={() => setDrawMode(drawMode === 'barrier' ? null : 'barrier')}
+                    sx={{ borderRadius: 20, fontSize: 12, mb: 1.5 }}>
+                    {drawMode === 'barrier' ? '그리기 중지' : '선분 추가'}
+                  </Button>
+                </Box>
+              )}
+              <Button fullWidth variant="contained" onClick={() => setCurrentStep(4)}
+                disabled={!barrierSegments.length}
+                sx={{ borderRadius: 20, fontWeight: 600, mt: barrierSegments.length ? 0 : 1.5 }} endIcon={<ChevronRightIcon />}>
+                다음: 공사 기간
+              </Button>
             </Box>
-          </GoogleSection>
+          </Collapse>
 
-          {/* 분석 버튼 */}
-          <Box sx={{ p: 2, borderTop: '1px solid #E8EAED' }}>
-            <Button variant="contained" color="primary" size="large" fullWidth
-              startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <CalculateIcon />}
-              disabled={!sourceLocation || !barrierSegments.length || loading} onClick={handleCalculate}
-              sx={{ height: 48, borderRadius: 24, fontSize: 15, fontWeight: 500,
-                boxShadow: '0 2px 6px rgba(26,115,232,0.4)' }}>
-              {loading ? '분석 중...' : '소음 영향 분석'}
-            </Button>
-          </Box>
+          <Divider />
+
+          {/* ══ STEP 4: 공사 기간 ══ */}
+          <StepHeader
+            step={4} currentStep={currentStep} icon={<AccessTimeIcon sx={{ fontSize: 16 }} />}
+            title="공사 기간"
+            summary={`${sufferingMonths}개월`}
+            onEdit={() => setCurrentStep(4)}
+          />
+          <Collapse in={currentStep === 4}>
+            <Box sx={{ px: 2, pb: 2, pt: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                <Slider value={sufferingMonths} min={1} max={36} step={1} sx={{ flex: 1 }}
+                  marks={[{value:1,label:'1개월'},{value:12,label:'1년'},{value:36,label:'3년'}]}
+                  onChange={(_, v) => setSufferingMonths(v)}
+                  valueLabelDisplay="on" valueLabelFormat={(v) => `${v}개월`} />
+                <Box sx={{ minWidth: 52, textAlign: 'center', p: 1, borderRadius: 2, background: '#FEF7E0' }}>
+                  <Typography fontWeight={700} color="warning.main" sx={{ fontSize: 18, lineHeight: 1 }}>{sufferingMonths}</Typography>
+                  <Typography variant="caption" color="warning.main">개월</Typography>
+                </Box>
+              </Box>
+              <Box sx={{ borderRadius: 2, overflow: 'hidden', border: '1px solid #E8EAED', mb: 2 }}>
+                <Box sx={{ px: 2, py: 1, background: '#F8F9FA', borderBottom: '1px solid #E8EAED' }}>
+                  <Typography variant="caption" fontWeight={600} color="text.secondary">
+                    환경분쟁조정위원회 배상 기준 (2026.1.1~) — 인당 누적
+                  </Typography>
+                </Box>
+                {['level1','level2','level3','level4'].map((key, bi) => {
+                  const lv = LEVELS[key];
+                  const ranges = ['65~70dB','70~75dB','75~80dB','80dB↑'];
+                  const excess = ['1~5dB','6~10dB','11~15dB','16dB↑'];
+                  const amt    = getCompAmt(key, sufferingMonths);
+                  return (
+                    <Box key={key} sx={{
+                      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+                      px: 2, py: 0.8, alignItems: 'center',
+                      background: lv.bg,
+                      borderBottom: bi < 3 ? '1px solid #E8EAED' : 'none',
+                    }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: lv.color }} />
+                        <Typography variant="caption" fontWeight={600} sx={{ color: lv.color }}>{ranges[bi]}</Typography>
+                      </Box>
+                      <Typography variant="caption" color="text.secondary">초과 {excess[bi]}</Typography>
+                      <Typography variant="caption" fontWeight={700} sx={{ color: lv.color }}>
+                        ₩{amt.toLocaleString()}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
+              <Button variant="contained" color="primary" size="large" fullWidth
+                startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <CalculateIcon />}
+                disabled={!sourceLocation || !barrierSegments.length || loading} onClick={handleCalculate}
+                sx={{ height: 48, borderRadius: 24, fontSize: 15, fontWeight: 500,
+                  boxShadow: '0 2px 6px rgba(26,115,232,0.4)' }}>
+                {loading ? '분석 중...' : '소음 영향 분석'}
+              </Button>
+            </Box>
+          </Collapse>
+
+          <Divider />
 
           {/* ── 결과 ── */}
           {results.length > 0 && (
             <Box>
               <Divider />
+              <Box sx={{ px: 2, pt: 1.5, pb: 0.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" fontWeight={700} color="text.primary">분석 결과</Typography>
+                <Button size="small" onClick={() => { setCurrentStep(1); setResults([]); setBuildings(null); }}
+                  sx={{ borderRadius: 20, fontSize: 11, color: '#1A73E8' }}>
+                  다시 설정
+                </Button>
+              </Box>
               {/* 요약 카드 */}
               <Box sx={{ p: 2, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1 }}>
                 {[
@@ -553,7 +623,7 @@ export default function SiteAnalysisPage() {
                       </Box>
                       <Box sx={{ flex: 1, overflow: 'hidden' }}>
                         <Typography variant="body2" fontWeight={600} noWrap>
-                          {r.name && r.name !== '건물' ? r.name : `건물 (${r.distance}m)`}
+                          {r.name && r.name !== '건물' ? r.name : r.addr || `건물 (${r.distance}m)`}
                         </Typography>
                         {r.addr && (
                           <Typography variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: 11 }}>
@@ -667,6 +737,48 @@ export default function SiteAnalysisPage() {
   );
 }
 
+/* ── 스테퍼 헤더 ── */
+function StepHeader({ step, currentStep, icon, title, summary, onEdit }) {
+  const done   = step < currentStep;
+  const active = step === currentStep;
+  const future = step > currentStep;
+  return (
+    <Box sx={{
+      display: 'flex', alignItems: 'center', gap: 1.5,
+      px: 2, py: 1.2,
+      background: active ? '#F8F9FA' : '#fff',
+      opacity: future ? 0.4 : 1,
+      transition: 'opacity 0.2s',
+    }}>
+      <Box sx={{
+        width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: done ? '#0F9D58' : active ? '#1A73E8' : '#E8EAED',
+        color: done || active ? '#fff' : '#9AA0A6',
+        fontSize: 13, fontWeight: 700,
+      }}>
+        {done ? <CheckCircleIcon sx={{ fontSize: 16 }} /> : icon}
+      </Box>
+      <Box sx={{ flex: 1, overflow: 'hidden' }}>
+        <Typography variant="subtitle2" fontWeight={active ? 700 : 500} color={active ? 'text.primary' : 'text.secondary'}>
+          {title}
+        </Typography>
+        {done && (
+          <Typography variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: 11 }}>
+            {summary}
+          </Typography>
+        )}
+      </Box>
+      {done && (
+        <Button size="small" onClick={onEdit}
+          sx={{ flexShrink: 0, borderRadius: 20, fontSize: 11, minWidth: 0, px: 1.5, color: '#1A73E8' }}>
+          수정
+        </Button>
+      )}
+    </Box>
+  );
+}
+
 /* ── 구글 스타일 섹션 ── */
 function GoogleSection({ icon, title, dimmed, children }) {
   return (
@@ -684,10 +796,38 @@ function GoogleSection({ icon, title, dimmed, children }) {
   );
 }
 
-/* ── 층별 테이블 ── */
+/* ── 층별·호수별 테이블 ── */
 function FloorTable({ building, sufferingMonths }) {
-  const { floor_results = [], total_compensation, name, addr, barrier_d1, barrier_d2, floors, distance } = building;
-  const displayName = name && name !== '건물' ? name : `건물`;
+  const { floor_results = [], total_compensation, name, addr, barrier_d1, barrier_d2, floors, distance, units_per_floor } = building;
+  const uPerFloor = units_per_floor || 4;
+  const displayName = name && name !== '건물' ? name : '건물';
+
+  // 층 번호 → 호수 목록 (예: 3층, 4세대 → 301, 302, 303, 304)
+  const unitLabel = (floorNum, unitIdx) => {
+    const base = floorNum * 100 + unitIdx + 1;
+    return `${base}호`;
+  };
+
+  // 호수별 행 생성: 초과 층만 호수 전개, 미초과 층은 한 행으로
+  const rows = [];
+  for (const f of floor_results) {
+    const lv = LEVELS[f.noise_level] || LEVELS.safe;
+    if (f.exceeds_65db) {
+      for (let u = 0; u < uPerFloor; u++) {
+        rows.push({
+          key: `${f.floor}-${u}`,
+          floorLabel: u === 0 ? `${f.floor}층` : '',
+          unitLabel: unitLabel(f.floor, u),
+          f, lv,
+          isFirstUnit: u === 0,
+          spanFloor: uPerFloor,
+        });
+      }
+    } else {
+      rows.push({ key: `${f.floor}-0`, floorLabel: `${f.floor}층`, unitLabel: '—', f, lv, isFirstUnit: true, spanFloor: 1 });
+    }
+  }
+
   return (
     <Box sx={{ background: '#F8F9FA', borderBottom: '3px solid #1A73E8' }}>
       <Box sx={{ px: 2, py: 1, background: '#E8F0FE' }}>
@@ -700,7 +840,7 @@ function FloorTable({ building, sufferingMonths }) {
         </Box>
         {addr && (
           <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: 11, mt: 0.2 }}>
-            {addr} · {floors}층 · {distance}m
+            {addr} · {floors}층 · {distance}m · 층당 {uPerFloor}세대
           </Typography>
         )}
       </Box>
@@ -711,36 +851,48 @@ function FloorTable({ building, sufferingMonths }) {
           </Typography>
         </Box>
       )}
-      <Box sx={{ maxHeight: 220, overflowY: 'auto' }}>
+      <Box sx={{ maxHeight: 300, overflowY: 'auto' }}>
         <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
-              {['층', '소음도', '방음벽 감쇠', '배상금(인당)'].map((h) => (
-                <TableCell key={h}>{h}</TableCell>
+              {['층', '호수', '소음도', '방음벽 감쇠', '배상금(인당)'].map((h) => (
+                <TableCell key={h} sx={{ fontSize: 11, py: 0.6, fontWeight: 700 }}>{h}</TableCell>
               ))}
             </TableRow>
           </TableHead>
           <TableBody>
-            {floor_results.map((f) => {
-              const lv = LEVELS[f.noise_level] || LEVELS.safe;
+            {rows.map((row) => {
+              const { f, lv } = row;
               return (
-                <TableRow key={f.floor} sx={{ background: f.exceeds_65db ? lv.bg : 'transparent' }}>
-                  <TableCell fontWeight={500}>{f.floor}층</TableCell>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: lv.color }} />
-                      <Typography variant="caption" fontWeight={700} sx={{ color: lv.color }}>{f.noise_db}dB</Typography>
-                    </Box>
+                <TableRow key={row.key} sx={{ background: f.exceeds_65db ? lv.bg : 'transparent' }}>
+                  <TableCell sx={{ fontSize: 11, py: 0.4, fontWeight: row.isFirstUnit ? 700 : 400,
+                    color: row.isFirstUnit ? 'text.primary' : 'transparent', borderBottom: row.isFirstUnit && f.exceeds_65db ? '1px dashed #E8EAED' : undefined }}>
+                    {row.floorLabel}
                   </TableCell>
-                  <TableCell>
-                    {f.A_barrier > 0
-                      ? <Typography variant="caption" fontWeight={600} color="primary">-{f.A_barrier}dB</Typography>
-                      : <Typography variant="caption" color="text.disabled">—</Typography>}
+                  <TableCell sx={{ fontSize: 11, py: 0.4, fontWeight: f.exceeds_65db ? 600 : 400, color: f.exceeds_65db ? lv.color : 'text.disabled' }}>
+                    {row.unitLabel}
                   </TableCell>
-                  <TableCell>
-                    {f.compensation > 0
-                      ? <Typography variant="caption" fontWeight={700} color="error">₩{f.compensation.toLocaleString()}</Typography>
-                      : <Typography variant="caption" color="text.disabled">—</Typography>}
+                  <TableCell sx={{ py: 0.4 }}>
+                    {row.isFirstUnit ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Box sx={{ width: 7, height: 7, borderRadius: '50%', background: lv.color }} />
+                        <Typography variant="caption" fontWeight={700} sx={{ color: lv.color, fontSize: 11 }}>{f.noise_db}dB</Typography>
+                      </Box>
+                    ) : null}
+                  </TableCell>
+                  <TableCell sx={{ py: 0.4 }}>
+                    {row.isFirstUnit ? (
+                      f.A_barrier > 0
+                        ? <Typography variant="caption" fontWeight={600} color="primary" sx={{ fontSize: 11 }}>-{f.A_barrier}dB</Typography>
+                        : <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>—</Typography>
+                    ) : null}
+                  </TableCell>
+                  <TableCell sx={{ py: 0.4 }}>
+                    {row.isFirstUnit ? (
+                      f.compensation > 0
+                        ? <Typography variant="caption" fontWeight={700} color="error" sx={{ fontSize: 11 }}>₩{f.compensation.toLocaleString()}</Typography>
+                        : <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>—</Typography>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               );
